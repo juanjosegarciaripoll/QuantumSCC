@@ -409,6 +409,8 @@ def omega_symplectic_transformation(Omega: Matrix, no_compact_flux_variables: in
     # Obtain the inverse of V
     inv_V = np.zeros((Omega_perm.shape[0], Omega_perm.shape[1]))
    
+    # [This can be done in three lines of Numpy. Don't use for loops. Matrix structure not evident.]
+    # [Here the dependent variables (zeros of the 2-form) are restored in "Omega" and "V"]
     for i in range(no_compact_flux_variables):
         inv_V[i,i] = 1
         inv_V[i + no_compact_flux_variables, :] = Omega_perm[i,:]

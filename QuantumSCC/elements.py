@@ -2,7 +2,7 @@
 elements.py contains the classes for the circuit elements:
 capacitors, inductors, and josephson junctions.
 
-This file was addapted from SQcircuit 
+This file was adapted from SQcircuit 
 """
 
 from typing import List, Any, Optional, Union, Callable

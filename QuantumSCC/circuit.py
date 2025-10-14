@@ -68,14 +68,21 @@ class Circuit:
         self.node_dict = node_dictionary
         self.no_nodes = len(node_dictionary)
 
+        # [Construct F matrix from Sect. IIA]
         self.Fcut, self.Floop, self.F, self.K, self.no_reduced_compact_flux = self.Kirchhoff()
 
+        # [Construct the differential form according to Sect. IIB]
+        # [omega_2B is not needed, can be eliminated]
         self.omega_2B, self.omega_symplectic, self.V, self.no_independent_variables, self.no_final_compact_flux = self.omega_function()
 
+        # [Construct the Hamiltonian according to the end of Sect. IIB and
+        #  eliminate variables without "dynamic"; outputs Eq. (19)]
         self.quadratic_hamiltonian, self.vector_JJ = self.classical_hamiltonian_function()
 
+        # [Section III, diagonalization of the quadratic part that is identified with oscillators]
         self.extended_quantum_hamiltonian, self.T, self.G = self.extended_hamiltonian_quantization()
 
+        # [Adds the nonlinear part to the effective model, to treat junctions. Incomplete.]
         self.FS_quadratic_hamiltonian_phiq, self.FS_basis_change_phiq, self.final_vector_JJ_phiq, self.FS_quadratic_hamiltonian_an, self.FS_basis_change_an, self.final_vector_JJ_an = self.total_hamiltonian_quantization()
 
 
@@ -146,6 +153,8 @@ class Circuit:
             Kloop = GS_algorithm(Kloop, normal=True, delete_zeros=True)
         
         # - Detect and simplify compact flux variables without dynamics
+        #   [Investigate if we can, instead of doing this, eliminate the rows
+        #    of dependent variables]
         if Kloop_S.shape[1] > 1:
             proportional_rows_Kloop = proportional_rows(Kloop[:no_initial_compact_flux_variables, :])
             
@@ -211,6 +220,9 @@ class Circuit:
         omega_symplectic, V, no_final_compact_flux = omega_symplectic_transformation(omega_non_symplectic,  no_compact_flux_variables=self.no_reduced_compact_flux, no_flux_variables = self.Fcut.shape[0])
 
         # Remove the zeros columns and rows from omega_symplectic
+        # [The zeros introduced by the dependent variables in K appear as zeros
+        #  in the matrix, that can be identified and eliminated. By the construction
+        #  of "K" the dependent variables must have ended at the end (check!)]
         no_independent_variables = np.linalg.matrix_rank(omega_symplectic)
         omega_symplectic = omega_symplectic[:no_independent_variables, :no_independent_variables]
 
@@ -226,14 +238,11 @@ class Circuit:
 
         Returns
         ----------
-        linear_quadratic_hamiltonian:
-            Matrix expression of the quadratic linear Hamiltonian.
-        interaction_quadratic_hamiltonian:
-            Matrix expression of interaction between the linear and non linear quadratic Hamiltonian.
-        nonlinear_quadratic_hamiltonian:
-            Matrix expression of the quadratic non-linear Hamiltonian.
-        vector_JJ:
-            Vector of the non-linear variables that go inside the cosine in the final Hamiltonian expression.
+        quadratic_hamiltonian
+            [Returns the matrix of the quadratic term in Eq. (19)]
+        vector_JJ
+            [Returns the vector 2*pi*v^T*K*V on which the cosine arguments
+            are projected.]
         """
 
         # Calculate the initial quadratic total energy function matrix (prior to the change of variable given by the Kirchhoff's equtions)
@@ -356,6 +365,8 @@ class Circuit:
     
 
     def total_hamiltonian_quantization(self):
+        # [Incomplete version (maybe) of the projection of the nonlinear part onto
+        #  the charge basis, for later diagonalization.]
 
         # Define the compact quadratic Hamiltonian 
         compact_flux_indexes = np.arange(0, self.no_final_compact_flux)
