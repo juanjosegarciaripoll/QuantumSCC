@@ -21,7 +21,7 @@ project_root = os.path.dirname(package_dir)
 sys.path.insert(0, project_root)
 
 from QuantumSCC.utils import units as unt
-from QuantumSCC.core.elements import Capacitor, Inductor, Junction
+from QuantumSCC.core.elements import Capacitor, Inductor, Junction, PhaseSlip
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +195,51 @@ class TestJunctionConversions(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 6. Global unit set/get functions
+# 6. PhaseSlip conversions and validation
+# ---------------------------------------------------------------------------
+
+class TestPhaseSlipConversions(unittest.TestCase):
+    """Tests for PhaseSlip element — dual of Junction."""
+
+    def _ind(self):
+        return Inductor(1, unit='nH')
+
+    def test_value_ghz_returns_1(self):
+        """PhaseSlip(1 GHz).value() == 1.0."""
+        self.assertAlmostEqual(PhaseSlip(1.0, unit='GHz', ind=self._ind()).value(), 1.0, places=10)
+
+    def test_value_thz_converts_to_ghz(self):
+        """PhaseSlip(1 THz).value() == 1000.0 GHz."""
+        self.assertAlmostEqual(PhaseSlip(1.0, unit='THz', ind=self._ind()).value(), 1000.0, places=7)
+
+    def test_value_mhz_converts_to_ghz(self):
+        """PhaseSlip(1000 MHz).value() == 1.0 GHz."""
+        self.assertAlmostEqual(PhaseSlip(1000.0, unit='MHz', ind=self._ind()).value(), 1.0, places=8)
+
+    def test_missing_ind_raises(self):
+        """PhaseSlip without a parallel inductor raises ValueError."""
+        with self.assertRaises(ValueError):
+            PhaseSlip(1, unit='GHz')
+
+    def test_invalid_unit_raises(self):
+        """PhaseSlip with a non-frequency unit raises ValueError."""
+        with self.assertRaises(ValueError):
+            PhaseSlip(1, unit='nH', ind=self._ind())
+
+    def test_invalid_unit_pf_raises(self):
+        """PhaseSlip with pF unit raises ValueError."""
+        with self.assertRaises(ValueError):
+            PhaseSlip(1, unit='pF', ind=self._ind())
+
+    def test_parallel_inductor_stored(self):
+        """ind attribute must be the inductor passed at construction."""
+        ind = self._ind()
+        ps = PhaseSlip(1.0, unit='GHz', ind=ind)
+        self.assertIs(ps.ind, ind)
+
+
+# ---------------------------------------------------------------------------
+# 7. Global unit set/get functions
 # ---------------------------------------------------------------------------
 
 class TestSetGetFunctions(unittest.TestCase):

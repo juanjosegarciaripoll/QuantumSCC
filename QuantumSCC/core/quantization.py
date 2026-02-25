@@ -7,7 +7,7 @@ Corresponds to Sections III, IV, and V.
 """
 
 import numpy as np
-from .elements import Junction, Capacitor, Inductor
+from .elements import Junction, Capacitor, Inductor, PhaseSlip
 from ..utils.linalg import pseudo_inv, symplectic_transformation
 
 class Quantization:
@@ -20,15 +20,16 @@ class Quantization:
         self.geom = geometry
 
         # Construct the Hamiltonian according to the end of Sect. IIB
-        self.quadratic_hamiltonian, self.vector_JJ = self.classical_hamiltonian_function()
+        self.quadratic_hamiltonian, self.vector_JJ, self.vector_QPS = self.classical_hamiltonian_function()
 
         # Section III, diagonalization of the quadratic part
         self.extended_quantum_hamiltonian, self.T, self.G = self.extended_hamiltonian_quantization()
 
         # Adds the nonlinear part to the effective model
         self.FS_quadratic_hamiltonian_phiq, self.FS_basis_change_phiq, \
-        self.final_vector_JJ_phiq, self.FS_quadratic_hamiltonian_an, \
-        self.FS_basis_change_an, self.final_vector_JJ_an = self.total_hamiltonian_quantization()
+        self.final_vector_JJ_phiq, self.final_vector_QPS_phiq, \
+        self.FS_quadratic_hamiltonian_an, self.FS_basis_change_an, \
+        self.final_vector_JJ_an, self.final_vector_QPS_an = self.total_hamiltonian_quantization()
 
     def classical_hamiltonian_function(self):
         """
@@ -61,22 +62,40 @@ class Quantization:
         # Calculate the quadratic energy function matrix after symplectic basis change
         quadratic_energy_symplectic_basis = self.geom.V.T @ quadratic_energy_after_Kirchhoff @ self.geom.V
 
-        # Construct the initial vectors of the Josephson Juntion energy
+        # Construct the initial vectors of the Josephson Junction energy (flux sector)
         vector_JJ = np.empty((quadratic_energy.shape[0], 0))
         for i, elem in enumerate(self.topo.elements):
             if isinstance(elem[2], Junction):
                 aux = np.zeros((quadratic_energy.shape[0], 1))
-                aux[i,0] = 1
+                aux[i, 0] = 1
                 vector_JJ = np.hstack((vector_JJ, aux))
 
         # Calculate the JJ vector under the change of variables
         vector_JJ = self.geom.V.T @ self.topo.K.T @ vector_JJ
 
-        # Verify JJ vector consider only dynamical variables
-        if np.allclose(vector_JJ[self.geom.no_independent_variables:,:], 0) == False:
+        # Verify JJ vector considers only dynamical variables
+        if np.allclose(vector_JJ[self.geom.no_independent_variables:, :], 0) == False:
             raise ValueError("The Energy of the Josephson Junction depends on non-dynamical variables. We cannot solve the circuit.")
-        
-        vector_JJ = vector_JJ[:self.geom.no_independent_variables,:]
+
+        vector_JJ = vector_JJ[:self.geom.no_independent_variables, :]
+
+        # Construct the initial vectors of the PhaseSlip energy (charge sector — dual to JJ)
+        vector_QPS = np.empty((quadratic_energy.shape[0], 0))
+        for i, elem in enumerate(self.topo.elements):
+            if isinstance(elem[2], PhaseSlip):
+                aux = np.zeros((quadratic_energy.shape[0], 1))
+                aux[i + self.topo.no_elements, 0] = 1   # charge sector row
+                vector_QPS = np.hstack((vector_QPS, aux))
+
+        # Calculate the QPS vector under the change of variables
+        vector_QPS = self.geom.V.T @ self.topo.K.T @ vector_QPS
+
+        # Verify QPS vector considers only dynamical variables
+        if vector_QPS.shape[1] > 0:
+            if np.allclose(vector_QPS[self.geom.no_independent_variables:, :], 0) == False:
+                raise ValueError("The Energy of the PhaseSlip element depends on non-dynamical variables. We cannot solve the circuit.")
+
+        vector_QPS = vector_QPS[:self.geom.no_independent_variables, :]
 
         # If quadratic_energy_symplectic_basis size equals independent variables, it is the Hamiltonian
         if quadratic_energy_symplectic_basis.shape[0] == self.geom.no_independent_variables:
@@ -115,7 +134,7 @@ class Quantization:
             print(f"Quadratic Hamiltonian shape: {quadratic_hamiltonian.shape}")
             print(f"Trace: {np.trace(quadratic_hamiltonian):.6f}")
 
-        return quadratic_hamiltonian, vector_JJ
+        return quadratic_hamiltonian, vector_JJ, vector_QPS
     
 
     def extended_hamiltonian_quantization(self):
@@ -131,11 +150,22 @@ class Quantization:
             print("Eq (26) - Diagonal H_e: H_e = sum h_bar omega_j a_j^dagger a_j")
 
         # Define the extended quadratic Hamiltonian
-        no_compact = self.geom.no_final_compact_flux
-        no_indep = self.geom.no_independent_variables
-        
-        extended_flux_indexes = np.arange(no_compact, no_indep//2)
-        extended_charge_indexes = np.arange(no_compact + no_indep//2, no_indep)
+        # Exclude both compact flux (JJ) and compact charge (QPS) variables.
+        no_compact_flux   = self.geom.no_final_compact_flux
+        no_compact_charge = self.geom.no_final_compact_charge
+        no_indep          = self.geom.no_independent_variables
+        no_flux           = no_indep // 2
+
+        # Extended flux: flux variables that are neither JJ compact flux nor
+        # QPS-inductor flux (the first no_compact_charge extended flux variables
+        # pair with the compact charges and are NOT harmonic oscillator modes).
+        extended_flux_indexes = np.arange(no_compact_flux + no_compact_charge, no_flux)
+        # Extended charge: charge variables beyond the JJ-conjugate charges and
+        # the QPS compact charges.
+        extended_charge_indexes = np.arange(
+            no_flux + no_compact_flux + no_compact_charge,
+            no_indep
+        )
         extended_indexes = np.block([extended_flux_indexes, extended_charge_indexes])
 
         extended_quadratic_hamiltonian = self.quadratic_hamiltonian[np.ix_(extended_indexes, extended_indexes)]
@@ -169,24 +199,44 @@ class Quantization:
     
 
     def total_hamiltonian_quantization(self):
-        # Define the compact quadratic Hamiltonian 
-        no_compact = self.geom.no_final_compact_flux
-        no_indep = self.geom.no_independent_variables
-        
-        compact_flux_indexes = np.arange(0, no_compact)
-        compact_charge_indexes = np.arange(no_indep//2, no_indep//2 + no_compact)
+        # Define the compact quadratic Hamiltonian.
+        # The compact sector includes both JJ compact flux pairs AND QPS compact charge pairs.
+        # nc_total = nCF + nCC counts all compact (non-oscillator) pairs.
+        no_compact_flux   = self.geom.no_final_compact_flux
+        no_compact_charge = self.geom.no_final_compact_charge
+        nc_total  = no_compact_flux + no_compact_charge
+        no_indep  = self.geom.no_independent_variables
+        no_flux   = no_indep // 2
+
+        # Compact flux indices: JJ compact flux [0..nCF-1] + QPS-inductor flux [nCF..nc_total-1]
+        compact_flux_indexes = np.arange(0, nc_total)
+        # Compact charge indices: JJ-conjugate charges [nF..nF+nCF-1] + QPS compact charges [nF+nCF..nF+nc_total-1]
+        compact_charge_indexes = np.arange(no_flux, no_flux + nc_total)
         compact_indexes = np.block([compact_flux_indexes, compact_charge_indexes])
 
         compact_quadratic_hamiltonian = self.quadratic_hamiltonian[np.ix_(compact_indexes, compact_indexes)]
         
-        # Diagonalize the compact quadratic Hamiltonian
-        eigval, eigvec = np.linalg.eig(compact_quadratic_hamiltonian)
-        sorted_indexes = np.argsort(np.abs(eigval))
-        eigval = eigval[sorted_indexes]
-        C = eigvec[:, sorted_indexes]
+        # Diagonalize flux and charge compact subblocks SEPARATELY.
+        # Joint diagonalization fails when QPS compact charges (eigenvalue 0) and
+        # JJ compact fluxes (eigenvalue 0) both appear, mixing the blocks incorrectly.
+        #
+        # Flux block A: JJ compact fluxes have eigenvalue 0, QPS-inductor fluxes have E_L.
+        #   Ascending sort → JJ (0) first, QPS-inductor (E_L) last.
+        # Charge block D: JJ-conjugate charges have E_C, QPS compact charges have eigenvalue 0.
+        #   Descending sort → JJ (E_C) first, QPS compact charges (0) last.
+        A = compact_quadratic_hamiltonian[:nc_total, :nc_total]
+        eigval_A, eigvec_A = np.linalg.eig(A)
+        sorted_A = np.argsort(np.abs(eigval_A))         # ascending: JJ zeros first
+        C_flux = np.real(eigvec_A[:, sorted_A])
 
-        # Define the vector of the JJ energy function
+        D = compact_quadratic_hamiltonian[nc_total:, nc_total:]
+        eigval_D, eigvec_D = np.linalg.eig(D)
+        sorted_D = np.argsort(-np.abs(eigval_D))        # descending: JJ E_C first, QPS 0 last
+        C_charge = np.real(eigvec_D[:, sorted_D])
+
+        # Define the vectors of the JJ and QPS energy functions
         vector_JJ = self.vector_JJ
+        vector_QPS = self.vector_QPS
 
         # Construct the full space basis change matrix for the flux-charge variables
         total_dimension = self.quadratic_hamiltonian.shape[0]
@@ -194,19 +244,20 @@ class Quantization:
 
         FS_basis_change_phiq = np.zeros((total_dimension, total_dimension), dtype=complex)
 
-        FS_basis_change_phiq[:no_compact, :no_compact] = C[:C.shape[0]//2, :C.shape[1]//2]
-        FS_basis_change_phiq[no_indep//2:no_compact + no_indep//2, no_indep//2:no_compact + no_indep//2] = C[C.shape[0]//2:, C.shape[1]//2:]
-        
-        FS_basis_change_phiq[no_compact:no_indep//2, no_compact:no_indep//2] = T[:T.shape[0]//2, :T.shape[1]//2]
-        FS_basis_change_phiq[no_compact:no_indep//2, no_compact + no_indep//2:] = T[:T.shape[0]//2, T.shape[1]//2:]
-        FS_basis_change_phiq[no_compact + no_indep//2:, no_compact:no_indep//2] = T[T.shape[0]//2:, :T.shape[1]//2]
-        FS_basis_change_phiq[no_compact + no_indep//2:, no_compact + no_indep//2:] = T[T.shape[0]//2:, T.shape[1]//2:]
+        FS_basis_change_phiq[:nc_total, :nc_total] = C_flux
+        FS_basis_change_phiq[no_flux:nc_total + no_flux, no_flux:nc_total + no_flux] = C_charge
+
+        FS_basis_change_phiq[nc_total:no_flux, nc_total:no_flux] = T[:T.shape[0]//2, :T.shape[1]//2]
+        FS_basis_change_phiq[nc_total:no_flux, nc_total + no_flux:] = T[:T.shape[0]//2, T.shape[1]//2:]
+        FS_basis_change_phiq[nc_total + no_flux:, nc_total:no_flux] = T[T.shape[0]//2:, :T.shape[1]//2]
+        FS_basis_change_phiq[nc_total + no_flux:, nc_total + no_flux:] = T[T.shape[0]//2:, T.shape[1]//2:]
 
         # Construct the Full space almost diagonalized quadratic Hamiltonian for the flux-charge variables
         FS_quadratic_hamiltonian_phiq = np.conj(FS_basis_change_phiq.T) @ self.quadratic_hamiltonian @ FS_basis_change_phiq
 
-        # Construct the final vector of the JJ energy function for the flux-charge variables
+        # Construct the final vectors of the JJ and QPS energy functions for the flux-charge variables
         final_vector_JJ_phiq = FS_basis_change_phiq.T @ vector_JJ
+        final_vector_QPS_phiq = FS_basis_change_phiq.T @ vector_QPS
 
 
         # Construct the full space basis change matrix for the ladder operators, number-phase variables
@@ -214,21 +265,25 @@ class Quantization:
 
         FS_basis_change_an = np.zeros((total_dimension, total_dimension), dtype=complex)
 
-        FS_basis_change_an[:no_compact, :no_compact] = C[:C.shape[0]//2, :C.shape[1]//2]
-        FS_basis_change_an[no_indep//2:no_compact + no_indep//2, no_indep//2:no_compact + no_indep//2] = C[C.shape[0]//2:, C.shape[1]//2:]
-        
-        FS_basis_change_an[no_compact:no_indep//2, no_compact:no_indep//2] = TG[:TG.shape[0]//2, :TG.shape[1]//2]
-        FS_basis_change_an[no_compact:no_indep//2, no_compact + no_indep//2:] = TG[:TG.shape[0]//2, TG.shape[1]//2:]
-        FS_basis_change_an[no_compact + no_indep//2:, no_compact:no_indep//2] = TG[TG.shape[0]//2:, :TG.shape[1]//2]
-        FS_basis_change_an[no_compact + no_indep//2:, no_compact + no_indep//2:] = TG[TG.shape[0]//2:, TG.shape[1]//2:]
+        FS_basis_change_an[:nc_total, :nc_total] = C_flux
+        FS_basis_change_an[no_flux:nc_total + no_flux, no_flux:nc_total + no_flux] = C_charge
+
+        FS_basis_change_an[nc_total:no_flux, nc_total:no_flux] = TG[:TG.shape[0]//2, :TG.shape[1]//2]
+        FS_basis_change_an[nc_total:no_flux, nc_total + no_flux:] = TG[:TG.shape[0]//2, TG.shape[1]//2:]
+        FS_basis_change_an[nc_total + no_flux:, nc_total:no_flux] = TG[TG.shape[0]//2:, :TG.shape[1]//2]
+        FS_basis_change_an[nc_total + no_flux:, nc_total + no_flux:] = TG[TG.shape[0]//2:, TG.shape[1]//2:]
 
         # Construct the Full space almost diagonalized quadratic Hamiltonian for the ladder operators
         FS_quadratic_hamiltonian_an = np.conj(FS_basis_change_an.T) @ self.quadratic_hamiltonian @ FS_basis_change_an
 
-        # Construct the final vector of the JJ energy function
+        # Construct the final vectors of the JJ and QPS energy functions (ladder operators basis)
         final_vector_JJ_an = FS_basis_change_an.T @ vector_JJ
+        final_vector_QPS_an = FS_basis_change_an.T @ vector_QPS
 
-        return FS_quadratic_hamiltonian_phiq, FS_basis_change_phiq, final_vector_JJ_phiq, FS_quadratic_hamiltonian_an, FS_basis_change_an, final_vector_JJ_an
+        return (FS_quadratic_hamiltonian_phiq, FS_basis_change_phiq,
+                final_vector_JJ_phiq, final_vector_QPS_phiq,
+                FS_quadratic_hamiltonian_an, FS_basis_change_an,
+                final_vector_JJ_an, final_vector_QPS_an)
 
 
     def diagonal_harmonic_Hamiltonian_expression(self, precision: int = 3):
@@ -260,11 +315,14 @@ class Quantization:
         # Define the matrices
         quantum_quadratic_hamiltonian = self.FS_quadratic_hamiltonian_phiq.real
         vector_JJ = self.final_vector_JJ_phiq
+        vector_QPS = self.final_vector_QPS_phiq
 
         # Define dimensional tools
         no_flux_variables = quantum_quadratic_hamiltonian.shape[0]//2
         no_compact_fluxes = self.geom.no_final_compact_flux
+        no_compact_charges = self.geom.no_final_compact_charge
         no_JJ = self.topo.no_JJ
+        no_QPS = self.topo.no_QPS
 
         print('----------------------------------------------------------------------')
 
@@ -272,8 +330,8 @@ class Quantization:
         print(f'Quantum Hamiltonian:')
         print(f'H/ℏ (GHz) =', end=" ")
 
-        # Print the extended Hamiltonian
-        for i in range(no_compact_fluxes, no_flux_variables):
+        # Print the extended Hamiltonian (pure oscillator modes only)
+        for i in range(no_compact_fluxes + no_compact_charges, no_flux_variables):
             if np.abs(quantum_quadratic_hamiltonian[i,i]) > 1e-14:
                 print(f'+ {quantum_quadratic_hamiltonian[i,i]:.{precision}f} [(\u03D5_e{i-no_compact_fluxes+1})^2 + (n_e{i-no_compact_fluxes+1})^2]', end=" ")
         
@@ -288,31 +346,50 @@ class Quantization:
             if np.abs(quantum_quadratic_hamiltonian[i+no_flux_variables, i+no_flux_variables]) > 1e-14:
                 print(f' + {quantum_quadratic_hamiltonian[i+no_flux_variables,i+no_flux_variables]:.{precision}f} (n_c{i+1})^2', end=" ")
 
-        junction_energy = np.zeros(no_JJ)
-        for i, elem in enumerate(self.topo.elements):
+        # Collect JJ energies
+        junction_energy = []
+        for elem in self.topo.elements:
             if isinstance(elem[2], Junction):
-                junction = elem[2]
-                junction_energy[i] = junction.value()
-        
-        for i in range(no_JJ):
-            if i != no_JJ-1:
-                print(f' - {junction_energy[i]:.{precision}f} cos(v_{i+1} \u03BE)', end=" ")
+                junction_energy.append(elem[2].value())
+
+        for i, ej in enumerate(junction_energy):
+            if i != no_JJ - 1:
+                print(f' - {ej:.{precision}f} cos(v_{i+1} \u03BE\u03C6)', end=" ")
             else:
-                print(f' - {junction_energy[i]:.{precision}f} cos(v_{i+1} \u03BE)')
-        if no_JJ == 0:
+                print(f' - {ej:.{precision}f} cos(v_{i+1} \u03BE\u03C6)')
+
+        # Collect QPS energies and print them (dual: couple to charge variables)
+        phaseslip_energy = []
+        for elem in self.topo.elements:
+            if isinstance(elem[2], PhaseSlip):
+                phaseslip_energy.append(elem[2].value())
+
+        for i, ep in enumerate(phaseslip_energy):
+            if i != no_QPS - 1:
+                print(f' - {ep:.{precision}f} cos(u_{i+1} \u03BEq)', end=" ")
+            else:
+                print(f' - {ep:.{precision}f} cos(u_{i+1} \u03BEq)')
+
+        if no_JJ == 0 and no_QPS == 0:
             print('')
 
         print('')
 
         np.set_printoptions(precision=precision)
-        print(f'Vectors v:')
+        print(f'JJ coupling vectors v (flux space):')
         for i in range(vector_JJ.shape[1]):
-            print(f'v_{i+1} = {(vector_JJ[:,i].real).T}')
+            print(f'v_{i+1} = {(vector_JJ[:, i].real).T}')
+
+        if no_QPS > 0:
+            print('')
+            print(f'QPS coupling vectors u (charge space):')
+            for i in range(vector_QPS.shape[1]):
+                print(f'u_{i+1} = {(vector_QPS[:, i].real).T}')
 
         print('')
 
-        print(f'Variable vectors \u03BE:')
-        print(f'\u03BEᵀ = (', end=" ")
+        print(f'Flux-charge variable vector \u03BE\u03C6:')
+        print(f'\u03BE\u03C6\u1D40 = (', end=" ")
         for i in range(2*no_flux_variables):
             if i < no_compact_fluxes:
                 print(f'\u03D5_c{i+1}', end=" ")
@@ -320,14 +397,25 @@ class Quantization:
                 print(f' \u03D5_e{i-no_compact_fluxes+1}', end=" ")
             elif no_flux_variables <= i < no_flux_variables + no_compact_fluxes:
                 print(f' n_c{i-no_flux_variables+1}', end=" ")
-            elif  no_flux_variables + no_compact_fluxes <= i <= 2*no_flux_variables-1:
+            elif no_flux_variables + no_compact_fluxes <= i <= 2*no_flux_variables-1:
                 print(f' n_e{i-no_compact_fluxes-no_flux_variables+1}', end=" ")
         print(f')')
+
+        if no_QPS > 0:
+            print(f'')
+            print(f'Charge variable vector \u03BEq (QPS sector):')
+            print(f'\u03BEq\u1D40 = (', end=" ")
+            for i in range(no_compact_charges):
+                print(f' q_c{i+1}', end=" ")
+            for i in range(no_flux_variables - no_compact_fluxes):
+                print(f' \u03C6_e{i+1}', end=" ")
+            print(f')')
+
         print(f'')
 
         print(f'Operator subscripts explanation:')
-        print(f' - Subindex e indicates that the operator belongs to the extended flux subspace and their conjugated charges')
-        print(f' - Subindex c indicates that the operator belongs to the compact flux subspace and their conjugated charges')
+        print(f' - Subindex e: extended subspace (oscillator modes)')
+        print(f' - Subindex c: compact subspace (JJ flux / QPS charge)')
         print('')
 
         print(f'Relation between number-phase operators and flux-charge operators:')

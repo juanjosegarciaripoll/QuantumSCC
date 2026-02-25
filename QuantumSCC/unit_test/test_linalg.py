@@ -68,9 +68,9 @@ class Test_symplectic_form_function(unittest.TestCase):
                                                 [ 0.,  0.,  0.,  0.,  0.]])
         
         # Note: no_compact_flux_variables=0, no_flux_variables=2 used as dummy params for pure math test
-        matrix_test, _, _ = omega_symplectic_transformation(
-            matrix_before_transformation, 
-            no_compact_flux_variables=0, 
+        matrix_test, _, _, _ = omega_symplectic_transformation(
+            matrix_before_transformation,
+            no_compact_flux_variables=0,
             no_flux_variables=2
         )
         
@@ -84,9 +84,9 @@ class Test_symplectic_form_function(unittest.TestCase):
                                                  [-1.,  0.,  0.,  0.,  0.],
                                                  [ 1.,  1.,  0.,  0.,  0.]])
         
-        canonical_matrix, canonical_basis_change, _ = omega_symplectic_transformation(
-            matrix_before_transformation, 
-            no_compact_flux_variables=0, 
+        canonical_matrix, canonical_basis_change, _, _ = omega_symplectic_transformation(
+            matrix_before_transformation,
+            no_compact_flux_variables=0,
             no_flux_variables=2
         )
 

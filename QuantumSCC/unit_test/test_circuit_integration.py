@@ -18,7 +18,8 @@ package_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(package_dir)
 sys.path.insert(0, project_root)
 
-from QuantumSCC import Circuit, Capacitor, Inductor, Junction
+from QuantumSCC import Circuit, Capacitor, Inductor, Junction, PhaseSlip
+from QuantumSCC.utils import units as unt
 
 
 class TestCircuitLC(unittest.TestCase):
@@ -181,6 +182,208 @@ class TestCircuitFluxonium(unittest.TestCase):
             self.circuit.Hamiltonian_expression()
         self.assertIn('cos', buf.getvalue(),
                       msg="Josephson cos term not found in Hamiltonian_expression output")
+
+
+class TestCircuitDualLC(unittest.TestCase):
+    """
+    Dual-transmon: QPS(1 GHz) ∥ Inductor(1 nH).
+    H/ℏ = E_L φ² − E_P cos(q/e).
+    H[0,0] = 2·E_L_code, H[1,1] = 0 (compact charge).
+    """
+
+    def setUp(self):
+        self.L_nH = 1.0
+        L = Inductor(value=self.L_nH, unit='nH')
+        P = PhaseSlip(value=1.0, unit='GHz', ind=L)
+        self.circuit  = Circuit([(0, 1, P)])
+        self.E_L_code = (unt.Phi0 / (2 * np.pi))**2 / (
+            2 * self.L_nH * 1e-9 * unt.hbar) / 1e9
+
+    def test_element_counts(self):
+        self.assertEqual(self.circuit.no_QPS,        1)
+        self.assertEqual(self.circuit.no_JJ,         0)
+        self.assertEqual(self.circuit.no_Inductors,   1)
+        self.assertEqual(self.circuit.no_Capacitors,  0)
+
+    def test_kirchhoff_constraint(self):
+        product = self.circuit.F @ self.circuit.K
+        self.assertTrue(np.allclose(product, 0),
+                        msg=f"F@K max: {np.max(np.abs(product)):.2e}")
+
+    def test_one_dynamic_mode(self):
+        self.assertEqual(self.circuit.no_independent_variables, 2)
+
+    def test_compact_charge_count(self):
+        self.assertEqual(self.circuit.no_final_compact_charge, 1)
+
+    def test_compact_flux_count(self):
+        self.assertEqual(self.circuit.no_final_compact_flux, 0)
+
+    def test_flux_entry_matches_formula(self):
+        """H[0,0] = 2·E_L_code."""
+        H = self.circuit.quadratic_hamiltonian
+        expected = 2.0 * self.E_L_code
+        self.assertAlmostEqual(H[0, 0].real, expected, delta=expected * 1e-6)
+
+    def test_charge_entry_zero(self):
+        """H[1,1] = 0: compact charge has no quadratic term."""
+        self.assertAlmostEqual(abs(self.circuit.quadratic_hamiltonian[1, 1]), 0.0, delta=1e-10)
+
+    def test_vector_qps_nonzero_single_column(self):
+        self.assertFalse(np.allclose(self.circuit.vector_QPS, 0))
+        self.assertEqual(self.circuit.vector_QPS.shape[1], 1)
+
+    def test_vector_jj_empty(self):
+        self.assertEqual(self.circuit.vector_JJ.shape[1], 0)
+
+    def test_hamiltonian_expression_prints_cos(self):
+        buf = StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.circuit.Hamiltonian_expression()
+        self.assertIn('cos', buf.getvalue())
+
+
+class TestQPSJJDuality(unittest.TestCase):
+    """
+    Structural duality: JJ (compact flux) ↔ QPS (compact charge).
+      Transmon:      H[0,0]=0, H[1,1]=4·E_C_code (compact flux)
+      Dual-transmon: H[1,1]=0, H[0,0]=2·E_L_code (compact charge)
+    """
+
+    def setUp(self):
+        C = Capacitor(value=1, unit='pF')
+        J = Junction(value=1, unit='GHz', cap=C)
+        self.transmon = Circuit([(0, 1, J)])
+        self.E_C_code = (2 * unt.e)**2 / (2 * 1e-12 * unt.hbar) / 1e9
+
+        L = Inductor(value=1, unit='nH')
+        P = PhaseSlip(value=1, unit='GHz', ind=L)
+        self.dual = Circuit([(0, 1, P)])
+        self.E_L_code = (unt.Phi0 / (2 * np.pi))**2 / (2 * 1e-9 * unt.hbar) / 1e9
+
+    def test_transmon_compact_flux_zero(self):
+        self.assertAlmostEqual(abs(self.transmon.quadratic_hamiltonian[0, 0]), 0.0, delta=1e-10)
+
+    def test_transmon_charge_entry_formula(self):
+        """H[1,1] = 4·E_C_code (GS normalisation + V transform)."""
+        H = self.transmon.quadratic_hamiltonian
+        self.assertAlmostEqual(H[1, 1].real, 4.0 * self.E_C_code, delta=self.E_C_code * 1e-5)
+
+    def test_dual_compact_charge_zero(self):
+        self.assertAlmostEqual(abs(self.dual.quadratic_hamiltonian[1, 1]), 0.0, delta=1e-10)
+
+    def test_dual_flux_entry_formula(self):
+        """H[0,0] = 2·E_L_code."""
+        H = self.dual.quadratic_hamiltonian
+        self.assertAlmostEqual(H[0, 0].real, 2.0 * self.E_L_code, delta=self.E_L_code * 1e-5)
+
+    def test_compact_variable_counts(self):
+        self.assertEqual(self.transmon.no_final_compact_flux,   1)
+        self.assertEqual(self.transmon.no_final_compact_charge,  0)
+        self.assertEqual(self.dual.no_final_compact_flux,        0)
+        self.assertEqual(self.dual.no_final_compact_charge,      1)
+
+    def test_kirchhoff_both(self):
+        self.assertTrue(np.allclose(self.transmon.F @ self.transmon.K, 0))
+        self.assertTrue(np.allclose(self.dual.F    @ self.dual.K,    0))
+
+
+class TestCircuitQPSErrors(unittest.TestCase):
+    """Unsupported QPS topologies must raise clear errors."""
+
+    def test_jj_and_qps_in_parallel_raises(self):
+        """JJ ∥ QPS on same nodes: QPS energy depends on non-dynamical variable."""
+        C = Capacitor(value=1, unit='pF')
+        J = Junction(value=1, unit='GHz', cap=C)
+        L = Inductor(value=1, unit='nH')
+        P = PhaseSlip(value=1, unit='GHz', ind=L)
+        with self.assertRaises(ValueError):
+            Circuit([(0, 1, J), (0, 1, P)])
+
+    def test_phaseslip_no_inductor_raises(self):
+        with self.assertRaises(ValueError):
+            PhaseSlip(value=1, unit='GHz')
+
+    def test_phaseslip_bad_unit_raises(self):
+        with self.assertRaises(ValueError):
+            PhaseSlip(value=1, unit='nH', ind=Inductor(1, unit='nH'))
+
+
+class TestQPSBackwardsCompatibility(unittest.TestCase):
+    """Existing circuits must be unaffected by the QPS extension."""
+
+    def test_lc_frequency_unchanged(self):
+        C = Capacitor(value=1, unit='pF')
+        L = Inductor(value=1, unit='nH')
+        c = Circuit([(0, 1, L), (0, 1, C)])
+        omega = 1e-9 / np.sqrt(1e-12 * 1e-9)
+        self.assertTrue(np.allclose(np.diag(c.extended_quantum_hamiltonian.real), omega))
+
+    def test_transmon_no_compact_charge(self):
+        C = Capacitor(value=1, unit='pF')
+        J = Junction(value=1, unit='GHz', cap=C)
+        c = Circuit([(0, 1, J)])
+        self.assertEqual(c.no_final_compact_charge, 0)
+        self.assertEqual(c.no_QPS,                  0)
+
+    def test_fluxonium_kirchhoff(self):
+        C = Capacitor(value=1, unit='pF')
+        J = Junction(value=1, unit='GHz', cap=C)
+        L = Inductor(value=1, unit='nH')
+        c = Circuit([(0, 1, J), (0, 1, L)])
+        self.assertTrue(np.allclose(c.F @ c.K, 0))
+
+    def test_coupled_oscillators_frequencies(self):
+        C1 = Capacitor(value=1, unit='pF')
+        C2 = Capacitor(value=1, unit='pF')
+        Cg = Capacitor(value=2, unit='pF')
+        L1 = Inductor(value=1, unit='nH')
+        L2 = Inductor(value=1, unit='nH')
+        c = Circuit([(0, 1, L1), (1, 2, Cg), (2, 0, L2), (0, 1, C1), (2, 0, C2)])
+        omega1 = 10 * np.sqrt(2)
+        omega2 = 10 * np.sqrt(10)
+        H = c.extended_quantum_hamiltonian
+        self.assertTrue(np.allclose(
+            H, np.diag([omega1, omega2, omega1, omega2]), atol=1e-6))
+
+
+class TestCircuitLinearTopologies(unittest.TestCase):
+    """Additional linear circuit topologies — migrated from legacy tests/test_circuit.py."""
+
+    def test_triangle_hamiltonian_values(self):
+        """Triangle: C(0-2), L(0-1), L(1-2) with C=L=1 GHz → H = [[1,0],[0,2]]."""
+        C = Capacitor(value=1, unit='GHz')
+        L = Inductor(value=1, unit='GHz')
+        cr = Circuit([(0, 2, C), (0, 1, L), (1, 2, L)])
+        expected = np.array([[1., 0.], [0., 2.]])
+        self.assertTrue(np.allclose(cr.quadratic_hamiltonian, expected))
+
+    def test_2C_and1L_parallel(self):
+        """2 caps in parallel + 1 inductor: omega = 1/sqrt(2*C*L)."""
+        C = Capacitor(value=1, unit='pF')
+        L = Inductor(value=1, unit='nH')
+        cr = Circuit([(0, 1, C), (0, 1, C), (0, 1, L)])
+        omega = 1e-9 / np.sqrt(2 * C.cValue * 1e-12 * L.lValue * 1e-9)
+        self.assertTrue(np.allclose(cr.extended_quantum_hamiltonian,
+                                    np.array([[omega, 0], [0, omega]])))
+
+    def test_2C_and1L_series(self):
+        """2 caps in series + 1 inductor: omega = 1/sqrt(0.5*C*L)."""
+        C = Capacitor(value=1, unit='pF')
+        L = Inductor(value=1, unit='nH')
+        cr = Circuit([(0, 1, C), (1, 2, C), (2, 0, L)])
+        omega = 1e-9 / np.sqrt(0.5 * C.cValue * 1e-12 * L.lValue * 1e-9)
+        self.assertTrue(np.allclose(cr.extended_quantum_hamiltonian,
+                                    np.array([[omega, 0], [0, omega]])))
+
+    def test_star_circuit(self):
+        """Symmetric star: 3 caps + 3 inductors → 2 degenerate modes at ~18.257 GHz."""
+        C = Capacitor(value=1, unit='pF')
+        L = Inductor(value=1, unit='nH')
+        cr = Circuit([(0, 1, C), (1, 2, C), (2, 0, C), (0, 3, L), (1, 3, L), (2, 3, L)])
+        omega = 18.2574110
+        expected = np.diag([omega, omega, omega, omega])
+        self.assertTrue(np.allclose(cr.extended_quantum_hamiltonian, expected))
 
 
 if __name__ == '__main__':

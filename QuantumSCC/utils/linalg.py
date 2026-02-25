@@ -329,136 +329,181 @@ def Gauge_variable_symplification(M: Matrix, row_index: int, column_index: int, 
     return M
 
     
-def omega_symplectic_transformation(Omega: Matrix, no_compact_flux_variables: int, no_flux_variables: int, tol: float = 1e-14) -> tuple[Matrix, Matrix]:
+def omega_symplectic_transformation(
+    Omega: Matrix,
+    no_compact_flux_variables: int,
+    no_flux_variables: int,
+    no_compact_charge_variables: int = 0,
+    tol: float = 1e-14,
+) -> tuple:
     """
-    Transform an antisymmetric matrix Omega to the symplectic matrix J such that J = V.T @ Omega @ V but treating the flux subspaces separetly 
+    Transform an antisymmetric matrix Omega to the symplectic matrix J such that
+    J = V.T @ Omega @ V, treating compact flux and compact charge subspaces separately.
+
+    The algorithm uses a Darboux-style construction. The permuted variable order is
+    (compact flux, all charges, extended flux), and the original algorithm naturally
+    handles both compact flux (JJ) and compact charge (QPS) variables, since the
+    charge block includes both compact and extended charges uniformly.
 
     Parameters
     ----------
         Omega: array_like
             Antisymmetric matrix to which the algorithm is applied.
         no_compact_flux_variables: int
-            Parameter to indicate how many compact flux variables we have.
+            Number of compact flux variables (JJ/Cap sector).
         no_flux_variables: int
-            Parameter to indicate how many total flux variables we have.
-        tol: int
-            Tolerance below which the element is considered zero. By default, it is 1e-14.
-    
+            Total number of flux variables.
+        no_compact_charge_variables: int
+            Number of compact charge variables (QPS sector). Default 0 (backwards compatible).
+        tol: float
+            Tolerance below which an element is considered zero. Default 1e-14.
+
     Returns
     ----------
         J: Matrix
-            Symplectic matrix from the transformation V.T @ Omega @ V
+            Symplectic matrix from the transformation V.T @ Omega @ V.
         V: Matrix
-            Basis change matrix that transforms the input matrix M into J.
+            Basis change matrix that transforms Omega into J.
         no_compact_flux_variables: int
-            Parameter to indicate how many independet compact flux variables we have at the end.
+            Number of independent compact flux variables after gauge deletion.
+        no_compact_charge_variables: int
+            Number of independent compact charge variables after gauge deletion.
     """
 
-    # Define the number of exteded flux variables and charge variables
+    # Define the number of extended flux variables and charge variables
     no_extended_flux_variables = no_flux_variables - no_compact_flux_variables
     no_charge_variables = Omega.shape[0] - no_flux_variables
 
     # Verify that the input matrix Omega is antisymmetric
     assert np.allclose(Omega.T, - Omega), "Input Omega matrix must be antisymmetric"
-    
-    # Delete the Gauge variables that already make zero their columns and rows in Omega to create the matrix Omega_new
+
+    # Delete gauge variables (all-zero rows and columns in Omega)
     Omega_new = Omega.copy()
     delete_index_list = []
     for i in range(Omega.shape[0]):
         if np.all(np.abs(Omega[i, :]) < tol):
             delete_index_list.append(i)
 
-    Omega_new = np.delete(Omega_new, delete_index_list, axis=0) # Row elimination
-    Omega_new = np.delete(Omega_new, delete_index_list, axis=1) # Column elimination
+    Omega_new = np.delete(Omega_new, delete_index_list, axis=0)
+    Omega_new = np.delete(Omega_new, delete_index_list, axis=1)
 
-    # Update the number of variables of each type according to the elimination of the previous Gauge variables
-    aux1, aux2 = no_compact_flux_variables, no_flux_variables
-    for _, delete_index in enumerate(delete_index_list):
-        if delete_index < aux1:
-            no_compact_flux_variables = no_compact_flux_variables - 1
-            no_flux_variables = no_flux_variables - 1
-        elif aux1 <= delete_index < aux2:
-            no_extended_flux_variables = no_extended_flux_variables - 1
-            no_flux_variables = no_flux_variables - 1
-        elif delete_index >= aux2:
-            no_charge_variables = no_charge_variables - 1 
+    # Update variable counts after gauge deletion.
+    # Original ordering boundaries: [0, nCF) compact flux, [nCF, nF) extended flux,
+    # [nF, nF+nCC) compact charge, [nF+nCC, end) extended charge.
+    aux_nCF = no_compact_flux_variables
+    aux_nF  = no_flux_variables
+    aux_nCC = no_flux_variables + no_compact_charge_variables
 
-    # Permute the variable vector in Omega to have (compact flux, charges, extended flux)
-    # - Columns permutation
-    Omega_perm = np.hstack((Omega_new[:, :no_compact_flux_variables], Omega_new[:, no_flux_variables:], Omega_new[:, no_compact_flux_variables:no_flux_variables]))
-    # - Rows permutation
-    Omega_perm = np.vstack((Omega_perm[:no_compact_flux_variables, :], Omega_perm[no_flux_variables:, :], Omega_perm[no_compact_flux_variables:no_flux_variables, :]))
+    for delete_index in delete_index_list:
+        if delete_index < aux_nCF:
+            no_compact_flux_variables  -= 1
+            no_flux_variables          -= 1
+        elif aux_nCF <= delete_index < aux_nF:
+            no_extended_flux_variables -= 1
+            no_flux_variables          -= 1
+        elif aux_nF <= delete_index < aux_nCC:
+            no_compact_charge_variables -= 1
+            no_charge_variables         -= 1
+        else:
+            no_charge_variables -= 1
 
+    no_extended_flux_variables = no_flux_variables - no_compact_flux_variables
 
-    # Raise an error if there are linear dependencies between the rows of Omega
-    # - Compact flux variables
-    Omega_compact_flux = Omega_perm[:no_compact_flux_variables, no_compact_flux_variables:no_compact_flux_variables+no_charge_variables-no_extended_flux_variables]
-    
+    nCF = no_compact_flux_variables
+    nF  = no_flux_variables
+    nQ  = no_charge_variables
+    nEF = no_extended_flux_variables
+
+    # Permute variables to working order: (compact flux, all charges, extended flux).
+    # This groups the "position-like" (compact flux) first, then all "momentum-like"
+    # charges (both compact and extended), then the remaining "position-like"
+    # extended flux. The Darboux construction then works uniformly for all circuit types.
+    Omega_perm = np.hstack((
+        Omega_new[:, :nCF],
+        Omega_new[:, nF:],
+        Omega_new[:, nCF:nF]
+    ))
+    Omega_perm = np.vstack((
+        Omega_perm[:nCF, :],
+        Omega_perm[nF:, :],
+        Omega_perm[nCF:nF, :]
+    ))
+
+    # Validate: compact flux rows must have full rank in the charge columns
+    Omega_compact_flux = Omega_perm[:nCF, nCF : nCF + nQ - nEF]
     if len(Omega_compact_flux) > 0:
         if np.linalg.matrix_rank(Omega_compact_flux, tol=tol) < Omega_compact_flux.shape[0]:
-            raise ValueError ('There are linear dependencies between the rows of Omega. By the momment the program is not ready to solve this circuit.')
+            raise ValueError(
+                'There are linear dependencies between the rows of Omega. '
+                'The program is not yet ready to solve this circuit.'
+            )
 
-    # - Extended flux variables
-    Omega_extended_flux = Omega_perm[no_compact_flux_variables+no_charge_variables:, no_compact_flux_variables:no_compact_flux_variables+no_charge_variables]
-
+    # Validate: extended flux rows must have full rank in the charge columns
+    Omega_extended_flux = Omega_perm[nCF + nQ:, nCF : nCF + nQ]
     if len(Omega_extended_flux) > 0:
         if np.linalg.matrix_rank(Omega_extended_flux, tol=tol) < Omega_extended_flux.shape[0]:
-            raise ValueError ('There are linear dependencies between the rows of Omega. By the momment the program is not ready to solve this circuit.')
+            raise ValueError(
+                'There are linear dependencies between the rows of Omega. '
+                'The program is not yet ready to solve this circuit.'
+            )
 
+    # Build inv_V in the permuted layout (compact flux, all charges, extended flux).
+    n_perm = Omega_perm.shape[0]
+    inv_V  = np.zeros((n_perm, n_perm))
 
-    # Obtain the inverse of V
-    inv_V = np.zeros((Omega_perm.shape[0], Omega_perm.shape[1]))
-   
-    # [This can be done in three lines of Numpy. Don't use for loops. Matrix structure not evident.]
-    # [Here the dependent variables (zeros of the 2-form) are restored in "Omega" and "V"]
-    for i in range(no_compact_flux_variables):
-        inv_V[i,i] = 1
-        inv_V[i + no_compact_flux_variables, :] = Omega_perm[i,:]
-    
-    for i in range(no_extended_flux_variables):
-        inv_V[i + 2*no_compact_flux_variables, :] = Omega_perm[i + Omega_perm.shape[0] - no_extended_flux_variables,:]
- 
-    for i in range(no_charge_variables-no_flux_variables):
-        if no_compact_flux_variables > 0: # Complete the matrix when there are compact flux variables
-            inv_V[2*no_compact_flux_variables + no_extended_flux_variables:no_charge_variables + no_compact_flux_variables, no_compact_flux_variables:(no_compact_flux_variables + no_charge_variables)] = \
-                null_space(inv_V[no_compact_flux_variables:2*no_compact_flux_variables, no_compact_flux_variables:((no_compact_flux_variables + no_charge_variables))]).T[i,:]
-        else: # Complete the matrix when there are no compact flux variables
-            inv_V[no_flux_variables:no_charge_variables, :no_charge_variables] = null_space(inv_V[:no_flux_variables, :no_charge_variables]).T[i,:]
-    
-    for i in range(no_extended_flux_variables):
-        inv_V[i+(no_compact_flux_variables + no_charge_variables), i+(no_compact_flux_variables + no_charge_variables)] = 1
+    # Block 1: compact flux variables — set unit vector and read conjugate from Omega row
+    for i in range(nCF):
+        inv_V[i, i] = 1
+        inv_V[i + nCF, :] = Omega_perm[i, :]
 
-    # Permute the variable vector in inv_V to return to the initial disposition (compact flux, extended flux, compact charge, extended charge)
-    # - Columns permutation
-    inv_V =  np.hstack((inv_V[:, :no_compact_flux_variables], inv_V[:, no_compact_flux_variables + no_charge_variables:], inv_V[:, no_compact_flux_variables:no_charge_variables+no_compact_flux_variables]))
-    # - Rows permutation
-    inv_V = np.vstack((inv_V[:no_compact_flux_variables, :], inv_V[no_compact_flux_variables + no_charge_variables:, :], inv_V[no_compact_flux_variables:no_charge_variables+no_compact_flux_variables, :]))
+    # Block 2: extended flux variables — read their Omega rows into the charge block
+    for i in range(nEF):
+        inv_V[i + 2*nCF, :] = Omega_perm[n_perm - nEF + i, :]
 
-    # Put back the columns and rows corresponding to the gauge variables deleted at the beggining
-    no_gauge_variables = len(delete_index_list)
+    # Block 3: null-space completion for extra charge variables (nQ > nF case)
+    for i in range(nQ - nF):
+        if nCF > 0:
+            inv_V[2*nCF + nEF : nQ + nCF, nCF : nCF + nQ] = \
+                null_space(inv_V[nCF : 2*nCF, nCF : nCF + nQ]).T[i, :]
+        else:
+            inv_V[nF : nQ, :nQ] = null_space(inv_V[:nF, :nQ]).T[i, :]
+
+    # Block 4: extended flux identity diagonal
+    for i in range(nEF):
+        inv_V[nCF + nQ + i, nCF + nQ + i] = 1
+
+    # Unpermute inv_V back to the original variable order
+    inv_V = np.hstack((
+        inv_V[:, :nCF],
+        inv_V[:, nCF + nQ:],
+        inv_V[:, nCF : nQ + nCF]
+    ))
+    inv_V = np.vstack((
+        inv_V[:nCF, :],
+        inv_V[nCF + nQ:, :],
+        inv_V[nCF : nQ + nCF, :]
+    ))
+
+    # Restore gauge variable rows/cols
+    no_gauge_variables     = len(delete_index_list)
     no_non_gauge_variables = Omega_new.shape[0]
-    
+
     if no_gauge_variables > 0:
-
-        inv_V = np.vstack ((inv_V, np.zeros((no_gauge_variables, inv_V.shape[1]))))
-        for i, delete_index in enumerate(delete_index_list): 
-
+        inv_V = np.vstack((inv_V, np.zeros((no_gauge_variables, inv_V.shape[1]))))
+        for i, delete_index in enumerate(delete_index_list):
             inv_V = np.hstack((inv_V[:, :delete_index], np.zeros((inv_V.shape[0], 1)), inv_V[:, delete_index:]))
-            inv_V[i +  no_non_gauge_variables, delete_index] = 1
+            inv_V[i + no_non_gauge_variables, delete_index] = 1
 
-    # Obtain basis change matrix V as the inverse of inv_V
-    #V = pseudo_inv(inv_V, tol=tol)
     V = np.linalg.inv(inv_V)
 
-    # Build the new 2-form and verify if it is correct
     J = np.zeros((Omega.shape[0], Omega.shape[1]))
     J[:no_flux_variables, no_flux_variables:2*no_flux_variables] = np.eye(no_flux_variables)
     J[no_flux_variables:2*no_flux_variables, :no_flux_variables] = -np.eye(no_flux_variables)
 
-    assert np.allclose(J, V.T @ Omega @ V), 'Something goes wrong. Output matrix V must satisfy J =  V.T @ Omega @ V, with J the symplectic matrix'
+    assert np.allclose(J, V.T @ Omega @ V), \
+        'Something goes wrong. Output matrix V must satisfy J = V.T @ Omega @ V, with J the symplectic matrix'
 
-    # Returns
-    return J, V, no_compact_flux_variables
+    return J, V, no_compact_flux_variables, no_compact_charge_variables
 
 
 def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e-14) -> tuple[Matrix, Matrix]:

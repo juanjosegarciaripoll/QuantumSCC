@@ -12,7 +12,7 @@ package_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(package_dir)
 sys.path.insert(0, project_root)
 
-from QuantumSCC.core.elements import Capacitor, Inductor, Junction
+from QuantumSCC.core.elements import Capacitor, Inductor, Junction, PhaseSlip
 from QuantumSCC.core.topology import Topology
 from QuantumSCC.core.geometry import Geometry
 from QuantumSCC.core.quantization import Quantization
@@ -105,6 +105,52 @@ class TestQuantizationNonLinear(unittest.TestCase):
         
         # Should be complex128 or float (usually complex due to basis change)
         self.assertTrue(np.iscomplexobj(H_phiq) or np.issubdtype(H_phiq.dtype, np.floating))
+
+class TestQuantizationQPS(unittest.TestCase):
+    """Tests for the dual-transmon (QPS + Inductor) quantization."""
+
+    def setUp(self):
+        """Dual-LC: PhaseSlip(1 GHz) in parallel with Inductor(1 nH)."""
+        self.L_nH = 1.0
+        self.E_P  = 1.0
+        L = Inductor(value=self.L_nH, unit='nH')
+        P = PhaseSlip(value=self.E_P, unit='GHz', ind=L)
+        self.topo  = Topology([(0, 1, P)])
+        self.geom  = Geometry(self.topo)
+        self.quant = Quantization(self.topo, self.geom)
+
+        # Analytical E_L in code units: (Phi0/2pi)^2 / (2*L*hbar) / 1e9
+        from QuantumSCC.utils import units as unt
+        self.E_L_code = (unt.Phi0 / (2 * np.pi))**2 / (2 * self.L_nH * 1e-9 * unt.hbar) / 1e9
+
+    def test_quadratic_hamiltonian_shape(self):
+        """Dual-LC has 1 mode -> 2x2 quadratic Hamiltonian."""
+        self.assertEqual(self.quant.quadratic_hamiltonian.shape, (2, 2))
+
+    def test_flux_entry_matches_formula(self):
+        """H[0,0] = 2 * E_L_code (inductive energy, factor 2 from unnormalized kernel)."""
+        H = self.quant.quadratic_hamiltonian
+        expected = 2.0 * self.E_L_code
+        self.assertAlmostEqual(H[0, 0].real, expected, delta=expected * 1e-6)
+
+    def test_charge_entry_zero(self):
+        """H[1,1] = 0: compact charge has no quadratic energy."""
+        H = self.quant.quadratic_hamiltonian
+        self.assertAlmostEqual(abs(H[1, 1]), 0.0, delta=1e-10)
+
+    def test_vector_qps_nonzero(self):
+        """vector_QPS must not be zero — QPS couples to dynamics."""
+        self.assertFalse(np.allclose(self.quant.vector_QPS, 0),
+                         msg="vector_QPS is zero — QPS decoupled from dynamics")
+
+    def test_vector_qps_single_column(self):
+        """One QPS element -> vector_QPS has exactly 1 column."""
+        self.assertEqual(self.quant.vector_QPS.shape[1], 1)
+
+    def test_vector_jj_empty(self):
+        """No JJ -> vector_JJ has 0 columns."""
+        self.assertEqual(self.quant.vector_JJ.shape[1], 0)
+
 
 if __name__ == '__main__':
     unittest.main()

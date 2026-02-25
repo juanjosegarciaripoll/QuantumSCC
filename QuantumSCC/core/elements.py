@@ -200,3 +200,60 @@ class Junction:
         """
         jMean = self.jValue * unt.freq_list[self.unit] / unt.get_unit_freq()
         return jMean
+
+
+class PhaseSlip:
+    """
+    Quantum Phase Slip (QPS) element — electromagnetic dual of Josephson Junction.
+
+    - JJ: compact flux φ_J ∈ S¹, energy = -E_J cos(2π φ/Φ₀)
+    - QPS: compact charge q_P ∈ S¹, energy = -E_P cos(π q/e)
+
+    Requires a parallel inductor (ind) for circuit dynamics,
+    dual to how Junction requires a parallel Capacitor.
+
+    Parameters
+    ----------
+    value : float
+        Phase slip amplitude E_P in frequency units.
+    unit : Optional[str]
+        Frequency unit (GHz, THz, etc.).
+    ind : Inductor
+        Parallel inductor (REQUIRED — provides flux dynamics).
+    """
+
+    def __init__(
+        self,
+        value: float,
+        unit: Optional[str] = None,
+        ind=None,
+    ) -> None:
+
+        if unit not in unt.freq_list and unit is not None:
+            raise ValueError(
+                "The input unit for the PhaseSlip element is not correct. "
+                "It must be a frequency unit (GHz, THz, ...)."
+            )
+
+        self.pValue = value
+        self.type = type(self)
+
+        if unit is None:
+            self.unit = unt.get_unit_JJ()
+        else:
+            self.unit = unit
+
+        if ind is None:
+            raise ValueError(
+                "For the correct operation of the program, each PhaseSlip "
+                "element must have a parallel inductor (ind=...)."
+            )
+        else:
+            self.ind = ind
+
+    def value(self) -> float:
+        """
+        Return the value of the PhaseSlip element in the main frequency unit (GHz).
+        """
+        pMean = self.pValue * unt.freq_list[self.unit] / unt.get_unit_freq()
+        return pMean

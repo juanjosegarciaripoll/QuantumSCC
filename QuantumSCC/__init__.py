@@ -1,9 +1,10 @@
 from .circuit import Circuit
-from .core.elements import Capacitor, Inductor, Junction
+from .core.elements import Capacitor, Inductor, Junction, PhaseSlip
 
 __all__ = [
     'Circuit',
-    'Capacitor', 
-    'Inductor', 
-    'Junction'
+    'Capacitor',
+    'Inductor',
+    'Junction',
+    'PhaseSlip',
 ]

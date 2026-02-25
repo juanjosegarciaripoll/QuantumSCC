@@ -9,7 +9,7 @@ from typing import Any, List, Tuple
 import numpy as np
 from scipy.linalg import null_space
 
-from .elements import Junction, Capacitor, Inductor
+from .elements import Junction, Capacitor, Inductor, PhaseSlip
 from ..utils.linalg import (
     GaussJordan, 
     reverseGaussJordan, 
@@ -40,13 +40,14 @@ class Topology:
             print("="*50)
             print(f"Nodes detected: {self.node_dictionary}")
 
-        # Categorize elements and flatten Junctions (Junction + Cap)
+        # Categorize elements and flatten Junctions (Junction + Cap) and PhaseSlips (PhaseSlip + Ind)
         self.elements = []
         self.no_JJ = 0
         self.no_Capacitors = 0
+        self.no_QPS = 0
         self.no_Inductors = 0
 
-        # Logic copied from original Circuit.__init__
+        # Order: [JJ | Cap (JJ parallel + regular) | PhaseSlip | Ind (QPS parallel + regular)]
         for a, b, elt in elements_list:
             if isinstance(elt, Junction):
                 self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt])
@@ -59,7 +60,14 @@ class Topology:
                 self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt])
                 self.no_Capacitors += 1
         for a, b, elt in elements_list:
-            if isinstance(elt, Inductor):
+            if isinstance(elt, PhaseSlip):
+                self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt])
+                self.no_QPS += 1
+        for a, b, elt in elements_list:
+            if isinstance(elt, PhaseSlip):
+                self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt.ind])
+                self.no_Inductors += 1
+            elif isinstance(elt, Inductor):
                 self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt])
                 self.no_Inductors += 1
 
@@ -69,7 +77,7 @@ class Topology:
             print(f"Element Counts -> JJ: {self.no_JJ}, Caps: {self.no_Capacitors}, Inds: {self.no_Inductors}")
 
         # Run Kirchhoff analysis
-        self.Fcut, self.Floop, self.F, self.K, self.no_reduced_compact_flux = self.Kirchhoff()
+        self.Fcut, self.Floop, self.F, self.K, self.no_reduced_compact_flux, self.no_reduced_compact_charge = self.Kirchhoff()
 
     def Kirchhoff(self):
         """
@@ -148,8 +156,38 @@ class Topology:
                 for _, rows_group in enumerate(proportional_rows_Kloop):
                     Kloop = Gauge_variable_symplification(Kloop, rows_group[0], rows_group[0])
         
-        # Construct Fcut Kernel, Kcut
-        Kcut = Floop.T
+        # ── DUAL KERNEL: compact charge (QPS) ──────────────────────────────
+        # Analogous to Kloop_S for compact flux, but for compact charge (QPS).
+        #
+        # KEY DUALITY: just as Kloop_S includes BOTH JJ and their parallel capacitors
+        # (no_initial_compact_flux = no_JJ + no_Capacitors), the dual kernel must
+        # include BOTH QPS elements and their parallel inductors.
+        # Reason: the compact mode emerges from the null space of the combined sector.
+        #   - JJ+Cap: null_space(Floop[:, :no_JJ+no_Cap]) → loop flux mode
+        #   - QPS+Ind: null_space(Fcut[:, qps_start:qps_start+2*no_QPS]) → loop charge mode
+        no_initial_compact_charge_variables = 2 * self.no_QPS   # QPS + their parallel inductors
+
+        # Compact-charge columns of Fcut: [QPS cols | QPS-inductor cols]
+        qps_start = self.no_JJ + self.no_Capacitors
+        Fcut_S = Fcut[:, qps_start : qps_start + no_initial_compact_charge_variables]
+
+        if no_initial_compact_charge_variables > 0:
+            Kcut_S = null_space(Fcut_S)
+            # Pad to full element count (no_elements rows), zeroing non-QPS/Ind rows
+            Kcut_S_full = np.zeros((self.no_elements, Kcut_S.shape[1]))
+            Kcut_S_full[qps_start : qps_start + no_initial_compact_charge_variables, :] = Kcut_S
+        else:
+            Kcut_S_full = np.zeros((self.no_elements, 0))
+
+        no_reduced_compact_charge = Kcut_S_full.shape[1]
+
+        # Construct full Kcut (dual of Kloop construction)
+        Kcut_aux = Floop.T
+        if Kcut_S_full.shape[1] == 0:
+            Kcut = Kcut_aux
+        else:
+            Kcut = np.block([Kcut_S_full, Kcut_aux])
+            Kcut = GS_algorithm(Kcut, normal=True, delete_zeros=True)
 
         # Construct the total kernel, K
         K = np.block(
@@ -168,5 +206,6 @@ class Topology:
             print(f"Total K shape: {K.shape}, Rank: {np.linalg.matrix_rank(K)}")
             check = np.max(np.abs(F @ K))
             print(f"Verification F @ K ~ 0: {check:.2e}")
+            print(f"Compact charge variables (QPS): {no_reduced_compact_charge}")
 
-        return Fcut, Floop, F, K, no_reduced_compact_flux
+        return Fcut, Floop, F, K, no_reduced_compact_flux, no_reduced_compact_charge
