@@ -131,12 +131,15 @@ class Topology:
         no_initial_extended_flux_variables = self.no_Inductors
 
         # - Construct the kernel of the compact subspace
-        Floop_S = Floop[:, :no_initial_compact_flux_variables]
-        Kloop_S = null_space(Floop_S)
-        
-        Kloop_S = np.vstack((Kloop_S, np.zeros((no_initial_extended_flux_variables, Kloop_S.shape[1])))) 
+        if no_initial_compact_flux_variables == 0:
+            # No compact flux variables (no JJ or Capacitor) → null space is trivially empty
+            Kloop_S = np.zeros((self.no_elements, 0))
+        else:
+            Floop_S = Floop[:, :no_initial_compact_flux_variables]
+            Kloop_S_raw = null_space(Floop_S)
+            Kloop_S = np.vstack((Kloop_S_raw, np.zeros((no_initial_extended_flux_variables, Kloop_S_raw.shape[1]))))
 
-        no_reduced_compact_flux= Kloop_S.shape[1] # Calculate the number of compact fluxes.
+        no_reduced_compact_flux = Kloop_S.shape[1]  # Calculate the number of compact fluxes.
 
         # - Construct the full space kernel, Kloop
         Kloop_aux = Fcut.T
