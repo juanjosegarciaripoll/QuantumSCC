@@ -137,7 +137,7 @@ class Topology:
         else:
             Floop_S = Floop[:, :no_initial_compact_flux_variables]
             Kloop_S_raw = null_space(Floop_S)
-            Kloop_S = np.vstack((Kloop_S_raw, np.zeros((no_initial_extended_flux_variables, Kloop_S_raw.shape[1]))))
+            Kloop_S = np.vstack((Kloop_S_raw, np.zeros((self.no_elements - no_initial_compact_flux_variables, Kloop_S_raw.shape[1]))))
 
         no_reduced_compact_flux = Kloop_S.shape[1]  # Calculate the number of compact fluxes.
 
@@ -157,7 +157,9 @@ class Topology:
             if len(proportional_rows_Kloop) > 0:
 
                 for _, rows_group in enumerate(proportional_rows_Kloop):
-                    Kloop = Gauge_variable_symplification(Kloop, rows_group[0], rows_group[0])
+                    row_idx = rows_group[0]
+                    col_idx = int(np.argmax(np.abs(Kloop[row_idx, :])))
+                    Kloop = Gauge_variable_symplification(Kloop, row_idx, col_idx)
         
         # ── DUAL KERNEL: compact charge (QPS) ──────────────────────────────
         # Analogous to Kloop_S for compact flux, but for compact charge (QPS).
