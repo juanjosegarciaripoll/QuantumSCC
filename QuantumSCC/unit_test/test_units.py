@@ -1,13 +1,13 @@
 """
-Unit tests for QuantumSCC.utils.units and element conversions.
+Unit tests for QuantumSCC.utils.units.
 
 Covers:
   - Unit conversion dictionaries (farad_list, henry_list, freq_list)
-  - Physical constants (hbar, Phi0, e)
-  - Capacitor.value() and Capacitor.energy() for different input units
-  - Inductor.value()  and Inductor.energy()  for different input units
-  - Junction.value() and error handling
-  - set_unit_*/get_unit_* helper functions
+  - Physical constants (hbar, Phi0, e, k_B)
+  - Global set_unit_*/get_unit_* helper functions
+
+Element construction and unit conversion for Capacitor / Inductor /
+Junction / PhaseSlip are tested in test_elements.py.
 """
 
 import unittest
@@ -15,18 +15,15 @@ import numpy as np
 import os
 import sys
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-package_dir = os.path.dirname(current_dir)
+current_dir  = os.path.dirname(os.path.abspath(__file__))
+package_dir  = os.path.dirname(current_dir)
 project_root = os.path.dirname(package_dir)
 sys.path.insert(0, project_root)
 
 from QuantumSCC.utils import units as unt
-from QuantumSCC.core.elements import Capacitor, Inductor, Junction, PhaseSlip
 
 
-# ---------------------------------------------------------------------------
-# 1. Unit conversion tables
-# ---------------------------------------------------------------------------
+# ── 1. Unit conversion tables ─────────────────────────────────────────────────
 
 class TestUnitTables(unittest.TestCase):
     """Verify the SI prefix conversion factors."""
@@ -66,14 +63,12 @@ class TestUnitTables(unittest.TestCase):
             self.assertAlmostEqual(unt.henry_list[b] / unt.henry_list[a], 1e-3, places=20)
 
 
-# ---------------------------------------------------------------------------
-# 2. Physical constants
-# ---------------------------------------------------------------------------
+# ── 2. Physical constants ─────────────────────────────────────────────────────
 
 class TestPhysicalConstants(unittest.TestCase):
 
     def test_hbar_value(self):
-        """hbar == 1.0545718e-34 J·s (stored as a float literal)."""
+        """hbar == 1.0545718e-34 J·s."""
         self.assertEqual(unt.hbar, 1.0545718e-34)
 
     def test_electron_charge_value(self):
@@ -81,7 +76,7 @@ class TestPhysicalConstants(unittest.TestCase):
         self.assertEqual(unt.e, 1.6021766e-19)
 
     def test_flux_quantum_consistent(self):
-        """Phi0 ≈ h / (2e) = 2π*hbar / (2e), within 0.01% of stored value."""
+        """Phi0 ≈ h / (2e) = 2π·ℏ / (2e), within 0.01 % of stored value."""
         Phi0_theory = 2 * np.pi * unt.hbar / (2 * unt.e)
         self.assertAlmostEqual(unt.Phi0 / Phi0_theory, 1.0, places=3)
 
@@ -90,157 +85,7 @@ class TestPhysicalConstants(unittest.TestCase):
         self.assertAlmostEqual(unt.k_B, 1.380649e-23, places=30)
 
 
-# ---------------------------------------------------------------------------
-# 3. Capacitor conversions
-# ---------------------------------------------------------------------------
-
-class TestCapacitorConversions(unittest.TestCase):
-
-    def test_value_pF_to_F(self):
-        """Capacitor(1 pF).value() == 1e-12 F."""
-        self.assertAlmostEqual(Capacitor(1, unit='pF').value(), 1e-12, places=24)
-
-    def test_value_nF_to_F(self):
-        """Capacitor(1 nF).value() == 1e-9 F."""
-        self.assertAlmostEqual(Capacitor(1, unit='nF').value(), 1e-9, places=21)
-
-    def test_value_fF_to_F(self):
-        """Capacitor(1 fF).value() == 1e-15 F."""
-        self.assertAlmostEqual(Capacitor(1, unit='fF').value(), 1e-15, places=27)
-
-    def test_energy_ghz_unit_returns_1(self):
-        """Capacitor(1 GHz).energy() == 1.0 (already in GHz)."""
-        self.assertAlmostEqual(Capacitor(1.0, unit='GHz').energy(), 1.0, places=10)
-
-    def test_energy_from_farads_formula(self):
-        """E_C = (2e)² / (2C) / hbar / GHz, consistent to 5 decimal places."""
-        C_F = 1e-12
-        cap = Capacitor(1, unit='pF')
-        E_c_theory = (2 * unt.e)**2 / (2 * C_F) / unt.hbar / unt.freq_list['GHz']
-        self.assertAlmostEqual(cap.energy(), E_c_theory, places=5)
-
-    def test_energy_proportional_to_inverse_capacitance(self):
-        """Doubling C halves E_C."""
-        e1 = Capacitor(1, unit='pF').energy()
-        e2 = Capacitor(2, unit='pF').energy()
-        self.assertAlmostEqual(e1 / e2, 2.0, places=10)
-
-    def test_invalid_unit_raises(self):
-        with self.assertRaises(ValueError):
-            Capacitor(1, unit='km')
-
-
-# ---------------------------------------------------------------------------
-# 4. Inductor conversions
-# ---------------------------------------------------------------------------
-
-class TestInductorConversions(unittest.TestCase):
-
-    def test_value_nH_to_H(self):
-        """Inductor(1 nH).value() == 1e-9 H."""
-        self.assertAlmostEqual(Inductor(1, unit='nH').value(), 1e-9, places=21)
-
-    def test_value_pH_to_H(self):
-        """Inductor(1 pH).value() == 1e-12 H."""
-        self.assertAlmostEqual(Inductor(1, unit='pH').value(), 1e-12, places=24)
-
-    def test_energy_ghz_unit_returns_1(self):
-        """Inductor(1 GHz).energy() == 1.0 (already in GHz)."""
-        self.assertAlmostEqual(Inductor(1.0, unit='GHz').energy(), 1.0, places=10)
-
-    def test_energy_from_henries_formula(self):
-        """E_L = (Phi0/2π)² / (2L) / hbar / GHz, consistent to 5 decimal places."""
-        L_H = 1e-9
-        ind = Inductor(1, unit='nH')
-        E_l_theory = (unt.Phi0 / (2 * np.pi))**2 / (2 * L_H) / unt.hbar / unt.freq_list['GHz']
-        self.assertAlmostEqual(ind.energy(), E_l_theory, places=5)
-
-    def test_energy_proportional_to_inverse_inductance(self):
-        """Doubling L halves E_L."""
-        e1 = Inductor(1, unit='nH').energy()
-        e2 = Inductor(2, unit='nH').energy()
-        self.assertAlmostEqual(e1 / e2, 2.0, places=10)
-
-    def test_invalid_unit_raises(self):
-        with self.assertRaises(ValueError):
-            Inductor(1, unit='km')
-
-
-# ---------------------------------------------------------------------------
-# 5. Junction conversions and validation
-# ---------------------------------------------------------------------------
-
-class TestJunctionConversions(unittest.TestCase):
-
-    def _cap(self):
-        return Capacitor(1, unit='pF')
-
-    def test_value_ghz_returns_1(self):
-        """Junction(1 GHz).value() == 1.0."""
-        self.assertAlmostEqual(Junction(1.0, unit='GHz', cap=self._cap()).value(), 1.0, places=10)
-
-    def test_value_thz_converts_to_ghz(self):
-        """Junction(1 THz).value() == 1000.0 GHz."""
-        self.assertAlmostEqual(Junction(1.0, unit='THz', cap=self._cap()).value(), 1000.0, places=7)
-
-    def test_missing_cap_raises(self):
-        """Junction without a parallel capacitor raises ValueError."""
-        with self.assertRaises(ValueError):
-            Junction(1, unit='GHz')
-
-    def test_invalid_unit_raises(self):
-        """Junction with a non-frequency unit raises ValueError."""
-        with self.assertRaises(ValueError):
-            Junction(1, unit='nH', cap=self._cap())
-
-
-# ---------------------------------------------------------------------------
-# 6. PhaseSlip conversions and validation
-# ---------------------------------------------------------------------------
-
-class TestPhaseSlipConversions(unittest.TestCase):
-    """Tests for PhaseSlip element — dual of Junction."""
-
-    def _ind(self):
-        return Inductor(1, unit='nH')
-
-    def test_value_ghz_returns_1(self):
-        """PhaseSlip(1 GHz).value() == 1.0."""
-        self.assertAlmostEqual(PhaseSlip(1.0, unit='GHz', ind=self._ind()).value(), 1.0, places=10)
-
-    def test_value_thz_converts_to_ghz(self):
-        """PhaseSlip(1 THz).value() == 1000.0 GHz."""
-        self.assertAlmostEqual(PhaseSlip(1.0, unit='THz', ind=self._ind()).value(), 1000.0, places=7)
-
-    def test_value_mhz_converts_to_ghz(self):
-        """PhaseSlip(1000 MHz).value() == 1.0 GHz."""
-        self.assertAlmostEqual(PhaseSlip(1000.0, unit='MHz', ind=self._ind()).value(), 1.0, places=8)
-
-    def test_missing_ind_raises(self):
-        """PhaseSlip without a parallel inductor raises ValueError."""
-        with self.assertRaises(ValueError):
-            PhaseSlip(1, unit='GHz')
-
-    def test_invalid_unit_raises(self):
-        """PhaseSlip with a non-frequency unit raises ValueError."""
-        with self.assertRaises(ValueError):
-            PhaseSlip(1, unit='nH', ind=self._ind())
-
-    def test_invalid_unit_pf_raises(self):
-        """PhaseSlip with pF unit raises ValueError."""
-        with self.assertRaises(ValueError):
-            PhaseSlip(1, unit='pF', ind=self._ind())
-
-    def test_parallel_inductor_stored(self):
-        """ind attribute must be the inductor passed at construction."""
-        ind = self._ind()
-        ps = PhaseSlip(1.0, unit='GHz', ind=ind)
-        self.assertIs(ps.ind, ind)
-
-
-# ---------------------------------------------------------------------------
-# 7. Global unit set/get functions
-# ---------------------------------------------------------------------------
+# ── 3. Global unit set / get functions ───────────────────────────────────────
 
 class TestSetGetFunctions(unittest.TestCase):
     """All tests restore global state via tearDown."""
