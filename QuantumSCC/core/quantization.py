@@ -62,6 +62,15 @@ class Quantization:
         # Calculate the quadratic energy function matrix after symplectic basis change
         quadratic_energy_symplectic_basis = self.geom.V.T @ quadratic_energy_after_Kirchhoff @ self.geom.V
 
+        # Determine whether charge-sector gauge variables are present.
+        # This happens exactly when a bare capacitor is in parallel with a QPS element
+        # (dual-fluxonium topology), making the QPS charge extended.  In this case
+        # topology.py sets kcut_suppressed=True during Kirchhoff() after detecting the
+        # parallel-capacitor suppression.  All other circuits (pure LC, star, coupled
+        # oscillator, JJ||QPS, etc.) have kcut_suppressed=False and must use the
+        # standard Schur complement to integrate out non-dynamical variables.
+        has_charge_gauge = self.topo.kcut_suppressed
+
         # Construct the initial vectors of the Josephson Junction energy (flux sector)
         vector_JJ = np.empty((quadratic_energy.shape[0], 0))
         for i, elem in enumerate(self.topo.elements):
@@ -90,10 +99,25 @@ class Quantization:
         # Calculate the QPS vector under the change of variables
         vector_QPS = self.geom.V.T @ self.topo.K.T @ vector_QPS
 
-        # Verify QPS vector considers only dynamical variables
+        # Validate the QPS vector.
+        # The only genuine error is when the QPS charge has ZERO component in
+        # the dynamical sector (positions 0..no_indep-1): the QPS is then fully
+        # decoupled from all dynamics and its cos(q) term has no physical effect.
+        #
+        # Non-zero components in the non-dynamical sector (positions no_indep:)
+        # are physically legitimate: Kirchhoff's current law in multi-node rings
+        # and coupled topologies naturally projects the QPS charge onto conserved
+        # charge combinations (null vectors of Omega). These components label the
+        # charge sector (analogous to external flux in fluxonium) and are correctly
+        # discarded by the truncation to no_independent_variables below.
         if vector_QPS.shape[1] > 0:
-            if np.allclose(vector_QPS[self.geom.no_independent_variables:, :], 0) == False:
-                raise ValueError("The Energy of the PhaseSlip element depends on non-dynamical variables. We cannot solve the circuit.")
+            no_indep = self.geom.no_independent_variables
+            if np.allclose(vector_QPS[:no_indep, :], 0):
+                raise ValueError(
+                    "The Energy of the PhaseSlip element is zero in the dynamical "
+                    "sector — the QPS is fully decoupled from the circuit dynamics. "
+                    "Check the circuit topology."
+                )
 
         vector_QPS = vector_QPS[:self.geom.no_independent_variables, :]
 
@@ -101,7 +125,16 @@ class Quantization:
         if quadratic_energy_symplectic_basis.shape[0] == self.geom.no_independent_variables:
             quadratic_hamiltonian = quadratic_energy_symplectic_basis
 
-        # Otherwise solve d(Total_energy)/dw = 0
+        # Otherwise the symplectic basis has more variables than independent ones.
+        # Two cases must be distinguished:
+        #
+        #   1. Charge-sector gauge variables (has_charge_gauge = True): extra columns of V
+        #      correspond to all-zero rows of omega_ns at index ≥ nF.  These are constants
+        #      of motion with no conjugate partner.  Restrict to the dynamical subspace (TEF_11).
+        #
+        #   2. Non-dynamical variables (has_charge_gauge = False): extra columns arise
+        #      from null-space completion (Block 3 in omega_symplectic_transformation).
+        #      These satisfy a genuine constraint dH/dw = 0; use the Schur complement.
         else:
             no_indep = self.geom.no_independent_variables
             TEF_11 = quadratic_energy_symplectic_basis[:no_indep, :no_indep]
@@ -111,12 +144,15 @@ class Quantization:
 
             assert np.allclose(TEF_12, TEF_21.T) == True, "There is an error in the decomposition of the total energy function matrix in blocks"
 
-            try: 
-                TEF_22_inv = pseudo_inv(TEF_22, tol = 1e-15)
-            except np.linalg.LinAlgError:
-                raise ValueError("There is no solution for the equation dH/dw = 0. The circuit does not present Hamiltonian dynamics.")
+            if has_charge_gauge:
+                quadratic_hamiltonian = TEF_11
+            else:
+                try:
+                    TEF_22_inv = pseudo_inv(TEF_22, tol = 1e-15)
+                except np.linalg.LinAlgError:
+                    raise ValueError("There is no solution for the equation dH/dw = 0. The circuit does not present Hamiltonian dynamics.")
 
-            quadratic_hamiltonian = TEF_11 - TEF_12 @ TEF_22_inv @ TEF_21
+                quadratic_hamiltonian = TEF_11 - TEF_12 @ TEF_22_inv @ TEF_21
 
 
         # Verify the resulting quadratic Hamiltonian is block diagonal and symmetric

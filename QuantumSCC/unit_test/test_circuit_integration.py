@@ -291,14 +291,14 @@ class TestQPSJJDuality(unittest.TestCase):
 class TestCircuitQPSErrors(unittest.TestCase):
     """Unsupported QPS topologies must raise clear errors."""
 
-    def test_jj_and_qps_in_parallel_raises(self):
-        """JJ ∥ QPS on same nodes: QPS energy depends on non-dynamical variable."""
+    def test_jj_and_qps_in_parallel_builds(self):
+        """JJ ∥ QPS on same nodes: now supported — circuit must build without error."""
         C = Capacitor(value=1, unit='pF')
         J = Junction(value=1, unit='GHz', cap=C)
         L = Inductor(value=1, unit='nH')
         P = PhaseSlip(value=1, unit='GHz', ind=L)
-        with self.assertRaises(ValueError):
-            Circuit([(0, 1, J), (0, 1, P)])
+        circuit = Circuit([(0, 1, J), (0, 1, P)])
+        self.assertIsNotNone(circuit.quadratic_hamiltonian)
 
     def test_phaseslip_no_inductor_raises(self):
         with self.assertRaises(ValueError):

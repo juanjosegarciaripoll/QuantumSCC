@@ -414,18 +414,37 @@ def omega_symplectic_transformation(
     nQ  = no_charge_variables
     nEF = no_extended_flux_variables
 
-    # Permute variables to working order: (compact flux, all charges, extended flux).
-    # This groups the "position-like" (compact flux) first, then all "momentum-like"
-    # charges (both compact and extended), then the remaining "position-like"
-    # extended flux. The Darboux construction then works uniformly for all circuit types.
+    # Detect the actual flux↔charge pairing from Omega_new.
+    # For standard circuits, compact flux pairs with compact charge (identity permutation).
+    # For crossed-pairing circuits (e.g. JJ-QPS chain), compact flux conjugates with
+    # extended charge. The greedy bijection detects this automatically:
+    # charge_perm[i] = j means charge j (in 0..nQ-1 charge indexing) is the conjugate
+    # of flux i. Leftover charges (nQ > nF) are appended in order.
+    Omega_fc = Omega_new[:nF, nF:nF + nQ]  # (nF, nQ): flux rows × charge cols
+    charge_perm = []
+    available = list(range(nQ))
+    for i in range(nF):
+        if not available:
+            break
+        scores = [abs(Omega_fc[i, j]) for j in available]
+        best = available[int(np.argmax(scores))]
+        charge_perm.append(best)
+        available.remove(best)
+    charge_perm = charge_perm + available   # leftover charges (nQ > nF) appended in order
+
+    # Permute variables to working order: (compact flux, charges[charge_perm], extended flux).
+    # charge_perm reorders the charge block so that the conjugate of each flux variable
+    # is placed adjacent to it. For standard circuits charge_perm is the identity.
+    charge_perm_col_idx = [nF + charge_perm[j] for j in range(nQ)]
     Omega_perm = np.hstack((
         Omega_new[:, :nCF],
-        Omega_new[:, nF:],
+        Omega_new[:, charge_perm_col_idx],
         Omega_new[:, nCF:nF]
     ))
+    charge_perm_row_idx = [nF + charge_perm[j] for j in range(nQ)]
     Omega_perm = np.vstack((
         Omega_perm[:nCF, :],
-        Omega_perm[nF:, :],
+        Omega_perm[charge_perm_row_idx, :],
         Omega_perm[nCF:nF, :]
     ))
 
@@ -460,19 +479,27 @@ def omega_symplectic_transformation(
     for i in range(nEF):
         inv_V[i + 2*nCF, :] = Omega_perm[n_perm - nEF + i, :]
 
-    # Block 3: null-space completion for extra charge variables (nQ > nF case)
-    for i in range(nQ - nF):
-        if nCF > 0:
-            inv_V[2*nCF + nEF : nQ + nCF, nCF : nCF + nQ] = \
-                null_space(inv_V[nCF : 2*nCF, nCF : nCF + nQ]).T[i, :]
-        else:
-            inv_V[nF : nQ, :nQ] = null_space(inv_V[:nF, :nQ]).T[i, :]
+    # Block 3: null-space completion for extra charge variables (nQ > nF case).
+    # The null space must be orthogonal to ALL constraint rows in the charge block:
+    # - CF conjugate rows: inv_V[nCF : 2*nCF, ...]  (Block 1 output)
+    # - EF Omega rows:     inv_V[2*nCF : 2*nCF+nEF, ...]  (Block 2 output)
+    # Using only CF conjugate rows (the old nCF>0 branch) misses the EF constraints,
+    # causing scipy to pick EC directions over CC when both nCF>0 and nEF>0.
+    # The unified formula inv_V[nCF : 2*nCF+nEF, ...] covers both cases:
+    #   nCF=0 → slice [0 : nEF] = Block 2 rows only  ✓
+    #   nEF=0 → slice [nCF : 2*nCF] = Block 1 rows only  ✓
+    #   both  → slice [nCF : 2*nCF+nEF] = Block 1 + Block 2  ✓
+    if nQ > nF:
+        ns = null_space(inv_V[nCF : 2*nCF + nEF, nCF : nCF + nQ])
+        for i in range(nQ - nF):
+            inv_V[2*nCF + nEF + i, nCF : nCF + nQ] = ns.T[i, :]
 
     # Block 4: extended flux identity diagonal
     for i in range(nEF):
         inv_V[nCF + nQ + i, nCF + nQ + i] = 1
 
-    # Unpermute inv_V back to the original variable order
+    # Unpermute inv_V back to the original variable order.
+    # Step 1: undo the (compact flux | charges | extended flux) → (compact flux | extended flux | charges) swap.
     inv_V = np.hstack((
         inv_V[:, :nCF],
         inv_V[:, nCF + nQ:],
@@ -483,6 +510,16 @@ def omega_symplectic_transformation(
         inv_V[nCF + nQ:, :],
         inv_V[nCF : nQ + nCF, :]
     ))
+    # Step 2: undo charge_perm reordering in the charge column block [nF..nF+nQ).
+    # After step 1, column nF+i of inv_V holds the coefficient for charge charge_perm[i]
+    # (in original charge-index space).  To restore the original Omega_new column order
+    # (charge j at column nF+j), apply a column-only permutation with inv_charge_perm.
+    # Row order is NOT changed: rows represent canonical variables and their ordering
+    # is fixed by the Darboux construction to match J_standard (flux i pairs with row nF+i).
+    if nQ > 0:
+        inv_charge_perm = list(np.argsort(charge_perm))
+        col_idx = list(range(nF)) + [nF + inv_charge_perm[k] for k in range(nQ)]
+        inv_V = inv_V[:, col_idx]
 
     # Restore gauge variable rows/cols
     no_gauge_variables     = len(delete_index_list)

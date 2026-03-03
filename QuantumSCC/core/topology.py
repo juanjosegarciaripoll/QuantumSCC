@@ -76,8 +76,25 @@ class Topology:
         if self.debug:
             print(f"Element Counts -> JJ: {self.no_JJ}, Caps: {self.no_Capacitors}, Inds: {self.no_Inductors}")
 
+        # Collect node pairs of standalone Capacitor elements (not JJ-parallel caps).
+        # Used in Kirchhoff() to detect QPS elements shunted by a bare capacitor,
+        # which suppresses the compact charge mode (dual of a shunting inductor
+        # suppressing the compact flux mode in fluxonium).
+        self.bare_cap_node_pairs = set()
+        for a, b, elt in elements_list:
+            if isinstance(elt, Capacitor):
+                pair = frozenset([self.node_dictionary[a], self.node_dictionary[b]])
+                self.bare_cap_node_pairs.add(pair)
+
+        # Collect node pairs with at least one JJ.
+        # Used in quantization.py to detect JJ ∥ QPS overlap (crossed pairing).
+        self.jj_node_pairs = set()
+        for a, b, elt in elements_list:
+            if isinstance(elt, Junction):
+                self.jj_node_pairs.add(frozenset([self.node_dictionary[a], self.node_dictionary[b]]))
+
         # Run Kirchhoff analysis
-        self.Fcut, self.Floop, self.F, self.K, self.no_reduced_compact_flux, self.no_reduced_compact_charge = self.Kirchhoff()
+        self.Fcut, self.Floop, self.F, self.K, self.no_reduced_compact_flux, self.no_reduced_compact_charge, self.kcut_suppressed, self.qps_groups = self.Kirchhoff()
 
     def Kirchhoff(self):
         """
@@ -162,34 +179,92 @@ class Topology:
                     Kloop = Gauge_variable_symplification(Kloop, row_idx, col_idx)
         
         # ── DUAL KERNEL: compact charge (QPS) ──────────────────────────────
-        # Analogous to Kloop_S for compact flux, but for compact charge (QPS).
+        # For each unique QPS node pair, exactly one compact charge mode exists.
+        # Multiple QPS on the same node pair share one mode — just as multiple
+        # JJ in parallel share one compact flux mode.
         #
-        # KEY DUALITY: just as Kloop_S includes BOTH JJ and their parallel capacitors
-        # (no_initial_compact_flux = no_JJ + no_Capacitors), the dual kernel must
-        # include BOTH QPS elements and their parallel inductors.
-        # Reason: the compact mode emerges from the null space of the combined sector.
-        #   - JJ+Cap: null_space(Floop[:, :no_JJ+no_Cap]) → loop flux mode
-        #   - QPS+Ind: null_space(Fcut[:, qps_start:qps_start+2*no_QPS]) → loop charge mode
-        no_initial_compact_charge_variables = 2 * self.no_QPS   # QPS + their parallel inductors
-
-        # Compact-charge columns of Fcut: [QPS cols | QPS-inductor cols]
+        # STRUCTURAL ASYMMETRY vs JJ case:
+        #   JJ: Floop_S has (2N-1) rows for N JJ on 2 nodes → null_space gives 1 vector ✓
+        #   QPS: Fcut_S always has (no_nodes-1) rows regardless of N → for 2 nodes,
+        #        null_space of 1×2N matrix gives 2N-1 vectors (overcounts by N-1).
+        #
+        # FIX: compute null_space from ONE representative (QPS, Ind) pair per unique
+        # node pair, then broadcast that compact mode to all parallel QPS+Ind pairs.
+        # This yields exactly one compact charge mode per unique QPS node pair.
         qps_start = self.no_JJ + self.no_Capacitors
-        Fcut_S = Fcut[:, qps_start : qps_start + no_initial_compact_charge_variables]
 
-        if no_initial_compact_charge_variables > 0:
-            Kcut_S = null_space(Fcut_S)
-            # Pad to full element count (no_elements rows), zeroing non-QPS/Ind rows
-            Kcut_S_full = np.zeros((self.no_elements, Kcut_S.shape[1]))
-            Kcut_S_full[qps_start : qps_start + no_initial_compact_charge_variables, :] = Kcut_S
-        else:
+        if self.no_QPS == 0:
             Kcut_S_full = np.zeros((self.no_elements, 0))
+            no_reduced_compact_charge = 0
+            qps_groups = {}
+        else:
+            # Group QPS indices (within 0..no_QPS-1) by their node pair
+            qps_groups = {}
+            for i in range(self.no_QPS):
+                na, nb = self.elements[qps_start + i][0], self.elements[qps_start + i][1]
+                pair = frozenset([na, nb])
+                if pair not in qps_groups:
+                    qps_groups[pair] = []
+                qps_groups[pair].append(i)
 
-        no_reduced_compact_charge = Kcut_S_full.shape[1]
+            # One compact charge mode per unique node pair
+            Kcut_S_full = np.zeros((self.no_elements, len(qps_groups)))
+            for col_idx, (pair, qps_indices) in enumerate(qps_groups.items()):
+                # Representative: first QPS in this group + its parallel inductor
+                rep = qps_indices[0]
+                rep_qps_col = qps_start + rep
+                rep_ind_col = qps_start + self.no_QPS + rep
 
-        # Construct full Kcut (dual of Kloop construction)
+                # Compact charge mode from representative pair (1D null space of a
+                # (no_nodes-1)×2 matrix, guaranteed 1D when QPS and Ind share nodes)
+                ns = null_space(Fcut[:, [rep_qps_col, rep_ind_col]])
+                v_qps, v_ind = ns[0, 0], ns[1, 0]
+
+                # Apply the same compact mode to ALL (QPS, Ind) pairs in this group
+                for i in qps_indices:
+                    Kcut_S_full[qps_start + i, col_idx] = v_qps
+                    Kcut_S_full[qps_start + self.no_QPS + i, col_idx] = v_ind
+
+            no_reduced_compact_charge = len(qps_groups)
+
+        # Suppress compact charge modes for QPS node pairs shunted by a bare capacitor.
+        # A bare capacitor in parallel with a QPS makes the QPS charge extended
+        # (exactly dual to a parallel inductor making JJ flux extended in fluxonium).
+        # Suppression is counted per unique node pair, not per individual QPS element.
+        kcut_suppressed = False
+        if no_reduced_compact_charge > 0:
+            suppressed_pairs = set(
+                frozenset([self.elements[qps_start + i][0], self.elements[qps_start + i][1]])
+                for i in range(self.no_QPS)
+                if frozenset([self.elements[qps_start + i][0], self.elements[qps_start + i][1]])
+                in self.bare_cap_node_pairs
+            )
+            n_suppressed = len(suppressed_pairs)
+            n_total_groups = len(qps_groups)
+
+            if n_suppressed == n_total_groups:
+                no_reduced_compact_charge = 0
+                Kcut_S_full = np.zeros((self.no_elements, 0))
+                kcut_suppressed = True
+            elif n_suppressed > 0:
+                raise NotImplementedError(
+                    f"{n_suppressed} of {n_total_groups} QPS node pairs are suppressed "
+                    "by a parallel capacitor. Partial suppression is not yet supported."
+                )
+
+        # Construct full Kcut (dual of Kloop construction).
+        # When compact charge modes were suppressed by a parallel capacitor, apply
+        # GS_algorithm to Kcut_aux = Floop.T so that QPS charge vectors spread
+        # correctly across multiple K-space directions rather than aligning entirely
+        # with a single (gauge) basis vector.  For circuits without suppression,
+        # the existing behaviour (Kcut = Kcut_aux unmodified) is preserved to avoid
+        # altering canonical variable choices in validated test cases.
         Kcut_aux = Floop.T
         if Kcut_S_full.shape[1] == 0:
-            Kcut = Kcut_aux
+            if kcut_suppressed:
+                Kcut = GS_algorithm(Kcut_aux, normal=True, delete_zeros=True)
+            else:
+                Kcut = Kcut_aux
         else:
             Kcut = np.block([Kcut_S_full, Kcut_aux])
             Kcut = GS_algorithm(Kcut, normal=True, delete_zeros=True)
@@ -213,4 +288,4 @@ class Topology:
             print(f"Verification F @ K ~ 0: {check:.2e}")
             print(f"Compact charge variables (QPS): {no_reduced_compact_charge}")
 
-        return Fcut, Floop, F, K, no_reduced_compact_flux, no_reduced_compact_charge
+        return Fcut, Floop, F, K, no_reduced_compact_flux, no_reduced_compact_charge, kcut_suppressed, qps_groups
