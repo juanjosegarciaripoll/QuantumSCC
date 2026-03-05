@@ -322,6 +322,91 @@ class Quantization:
                 final_vector_JJ_an, final_vector_QPS_an)
 
 
+    def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9):
+        """
+        Print the Hamiltonian twice: first symbolically (E_C, E_L, E_J, E_P as symbols),
+        then numerically (current Hamiltonian_expression format).
+
+        The symbolic form shows the pre-normal-mode Hamiltonian after the Schur complement
+        (Eq. 18 of the paper), which is linear in the energy parameters.
+        Normal-mode diagonalisation is intentionally not applied symbolically.
+        """
+        import sympy as sp
+        from ..utils.symbolic import build_symbolic_hamiltonian, _to_sym
+
+        H_sym, sym_vals, J_syms, P_syms = build_symbolic_hamiltonian(self.topo, self.geom)
+
+        nCF      = self.geom.no_final_compact_flux
+        nCC      = self.geom.no_final_compact_charge
+        nc_total = nCF + nCC
+        no_indep = self.geom.no_independent_variables
+        no_flux  = no_indep // 2
+        nEF      = no_flux - nc_total   # extended oscillator modes
+
+        # ── Canonical variable symbols, matching quadratic_hamiltonian ordering ──
+        # Flux block:   [0, nCF)       JJ compact flux       → φ_c{k}
+        #               [nCF, nc_total) QPS-inductor flux      → ψ_c{k}
+        #               [nc_total, nF)  extended flux          → φ_e{k}
+        # Charge block: [nF, nF+nCF)   JJ-conjugate charge   → n_c{k}
+        #               [nF+nCF, nF+nc_total) QPS compact charge → q_c{k}
+        #               [nF+nc_total, no_indep) extended charge → n_e{k}
+        vars_sym = []
+        for k in range(nCF):
+            vars_sym.append(sp.Symbol(f'phi_c{k+1}'))
+        for k in range(nCC):
+            vars_sym.append(sp.Symbol(f'psi_c{k+1}'))
+        for k in range(nEF):
+            vars_sym.append(sp.Symbol(f'phi_e{k+1}'))
+        for k in range(nCF):
+            vars_sym.append(sp.Symbol(f'n_c{k+1}'))
+        for k in range(nCC):
+            vars_sym.append(sp.Symbol(f'q_c{k+1}'))
+        for k in range(nEF):
+            vars_sym.append(sp.Symbol(f'n_e{k+1}'))
+
+        xi = sp.Matrix(vars_sym)
+
+        # ── Quadratic form: H_expr = ξᵀ H_sym ξ ──────────────────────────────
+        H_expr = (xi.T * H_sym * xi)[0, 0]
+        H_expr = sp.expand(H_expr)
+
+        # ── Add JJ cosine terms: −E_J·cos(v·ξ) ───────────────────────────────
+        for i, (E_J_sym, _) in enumerate(J_syms):
+            v   = self.vector_JJ[:, i]
+            arg = sum(
+                _to_sym(float(v[j])) * vars_sym[j]
+                for j in range(len(vars_sym)) if abs(v[j]) > tol
+            )
+            H_expr -= E_J_sym * sp.cos(arg)
+
+        # ── Add QPS cosine terms: −E_P·cos(u·ξ) ──────────────────────────────
+        for i, (E_P_sym, _) in enumerate(P_syms):
+            u   = self.vector_QPS[:, i]
+            arg = sum(
+                _to_sym(float(u[j])) * vars_sym[j]
+                for j in range(len(vars_sym)) if abs(u[j]) > tol
+            )
+            H_expr -= E_P_sym * sp.cos(arg)
+
+        # ── Print symbolic ────────────────────────────────────────────────────
+        sep = '─' * 70
+        print(sep)
+        print('Symbolic Hamiltonian:')
+        print(f'H/ℏ = {sp.pretty(H_expr, use_unicode=True)}')
+        print()
+        print('Parameter values (GHz):')
+        for sym, val in sym_vals.items():
+            print(f'  {sym} = {val:.{precision}f}')
+        for sym, val in J_syms:
+            print(f'  {sym} = {val:.{precision}f}')
+        for sym, val in P_syms:
+            print(f'  {sym} = {val:.{precision}f}')
+
+        # ── Print numerical ───────────────────────────────────────────────────
+        print()
+        print('Numerical Hamiltonian:')
+        self.Hamiltonian_expression(precision=precision)
+
     def diagonal_harmonic_Hamiltonian_expression(self, precision: int = 3):
         """
         Print out the diagonalized Hamiltonian. 
