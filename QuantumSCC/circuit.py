@@ -115,3 +115,7 @@ class Circuit:
     def Hamiltonian_expression(self, precision: int = 3, tol: float = 1e-14):
         """Delegates printing to the Quantization module."""
         self.quant.Hamiltonian_expression(precision, tol)
+
+    def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9):
+        """Print symbolic Hamiltonian (E_C, E_L, E_J, E_P) followed by numerical."""
+        self.quant.symbolic_hamiltonian_expression(precision, tol)
