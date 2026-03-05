@@ -392,7 +392,14 @@ class Quantization:
         sep = '─' * 70
         print(sep)
         print('Symbolic Hamiltonian:')
-        print(f'H/ℏ = {sp.pretty(H_expr, use_unicode=True)}')
+
+        # Use LaTeX rendering in Jupyter, fall back to pretty-print in terminal
+        try:
+            from IPython.display import display, Math
+            display(Math(r'H/\hbar = ' + sp.latex(H_expr)))
+        except (ImportError, NameError):
+            print(f'H/ℏ = {sp.pretty(H_expr, use_unicode=True)}')
+
         print()
         print('Parameter values (GHz):')
         for sym, val in sym_vals.items():
@@ -406,6 +413,8 @@ class Quantization:
         print()
         print('Numerical Hamiltonian:')
         self.Hamiltonian_expression(precision=precision)
+
+        return H_expr
 
     def diagonal_harmonic_Hamiltonian_expression(self, precision: int = 3):
         """
