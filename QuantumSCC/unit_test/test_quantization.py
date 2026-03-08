@@ -18,7 +18,7 @@ package_dir  = os.path.dirname(current_dir)
 project_root = os.path.dirname(package_dir)
 sys.path.insert(0, project_root)
 
-from QuantumSCC.core.elements import Capacitor, Inductor, Junction, PhaseSlip
+from QuantumSCC.core.elements import Capacitor, Junction, PhaseSlip
 from QuantumSCC.core.topology import Topology
 from QuantumSCC.core.geometry import Geometry
 from QuantumSCC.core.quantization import Quantization
@@ -27,7 +27,7 @@ from QuantumSCC.core.quantization import Quantization
 # Anonymous — no circuit architecture is implied.
 _T = Topology([
     (0, 1, Junction(1, 'GHz', cap=Capacitor(1, 'GHz'))),
-    (1, 2, PhaseSlip(1, 'GHz', ind=Inductor(1, 'GHz'))),
+    (1, 2, PhaseSlip(1, 'GHz', L_value=1, L_unit='GHz')),
 ])
 _G = Geometry(_T)
 _Q = Quantization(_T, _G)

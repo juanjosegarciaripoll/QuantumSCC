@@ -35,7 +35,7 @@ def _J():
     return Junction(value=1, unit='GHz', cap=Capacitor(value=1, unit='GHz'))
 
 def _P():
-    return PhaseSlip(value=1, unit='GHz', ind=Inductor(value=1, unit='GHz'))
+    return PhaseSlip(value=1, unit='GHz', L_value=1, L_unit='GHz')
 
 def _C():
     return Capacitor(value=1, unit='GHz')

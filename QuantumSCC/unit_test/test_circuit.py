@@ -207,10 +207,10 @@ class TestCircuitTransmon(unittest.TestCase):
         H = self.circuit.quadratic_hamiltonian
         self.assertAlmostEqual(abs(H[0, 0]), 0.0, delta=1e-10)
 
-    def test_charge_entry_equals_4_EC(self):
-        """H[1,1] = 4·E_C (charging energy with GS normalisation)."""
+    def test_charge_entry_equals_2_EC(self):
+        """H[1,1] = 2·E_C (integer kernel normalisation: K columns have norm √2)."""
         H = self.circuit.quadratic_hamiltonian
-        self.assertAlmostEqual(H[1, 1].real, 4.0 * self.E_C_code,
+        self.assertAlmostEqual(H[1, 1].real, 2.0 * self.E_C_code,
                                delta=self.E_C_code * 1e-5)
 
     def test_compact_flux_one(self):
@@ -231,8 +231,7 @@ class TestCircuitDualTransmon(unittest.TestCase):
 
     def setUp(self):
         self.L_nH = 1.0
-        L = Inductor(value=self.L_nH, unit='nH')
-        P = PhaseSlip(value=1.0, unit='GHz', ind=L)
+        P = PhaseSlip(value=1.0, unit='GHz', L_value=self.L_nH, L_unit='nH')
         self.circuit  = Circuit([(0, 1, P)])
         self.E_L_code = (unt.Phi0 / (2 * np.pi))**2 / (
             2 * self.L_nH * 1e-9 * unt.hbar) / 1e9
@@ -250,7 +249,7 @@ class TestCircuitDualTransmon(unittest.TestCase):
         self.assertEqual(self.circuit.no_final_compact_flux, 0)
 
     def test_flux_entry_equals_2_EL(self):
-        """H[0,0] = 2·E_L_code."""
+        """H[0,0] = 2·E_L_code — Article Eq. (30)."""
         H = self.circuit.quadratic_hamiltonian
         expected = 2.0 * self.E_L_code
         self.assertAlmostEqual(H[0, 0].real, expected, delta=expected * 1e-6)
@@ -278,8 +277,10 @@ class TestCircuitDualTransmon(unittest.TestCase):
 class TestQPSJJDuality(unittest.TestCase):
     """
     Structural duality check: the Hamiltonian is symmetric under JJ ↔ QPS.
-      Transmon:       H[0,0]=0  (compact flux),  H[1,1]=4·E_C
-      Dual-transmon:  H[1,1]=0  (compact charge), H[0,0]=2·E_L
+      Transmon:       H[0,0]=0  (compact flux),  H[1,1]=2·E_C
+      Dual-transmon:  H[1,1]=0  (compact charge), H[0,0]=4·E_L
+    Integer kernel normalisation: compact K columns have norm √2,
+    so compact-sector entries differ by factor 2 from SVD-normalised basis.
     Compact variable counts are swapped between the two.
     """
 
@@ -289,8 +290,7 @@ class TestQPSJJDuality(unittest.TestCase):
         self.transmon    = Circuit([(0, 1, J)])
         self.E_C_code    = (2 * unt.e)**2 / (2 * 1e-12 * unt.hbar) / 1e9
 
-        L = Inductor(value=1, unit='nH')
-        P = PhaseSlip(value=1, unit='GHz', ind=L)
+        P = PhaseSlip(value=1, unit='GHz', L_value=1, L_unit='nH')
         self.dual        = Circuit([(0, 1, P)])
         self.E_L_code    = (unt.Phi0 / (2 * np.pi))**2 / (2 * 1e-9 * unt.hbar) / 1e9
 
@@ -298,16 +298,16 @@ class TestQPSJJDuality(unittest.TestCase):
         self.assertAlmostEqual(abs(self.transmon.quadratic_hamiltonian[0, 0]), 0.0, delta=1e-10)
 
     def test_transmon_charge_entry_formula(self):
-        """H[1,1] = 4·E_C (charging energy)."""
+        """H[1,1] = 2·E_C (integer kernel normalisation)."""
         H = self.transmon.quadratic_hamiltonian
-        self.assertAlmostEqual(H[1, 1].real, 4.0 * self.E_C_code,
+        self.assertAlmostEqual(H[1, 1].real, 2.0 * self.E_C_code,
                                delta=self.E_C_code * 1e-5)
 
     def test_dual_compact_charge_entry_zero(self):
         self.assertAlmostEqual(abs(self.dual.quadratic_hamiltonian[1, 1]), 0.0, delta=1e-10)
 
     def test_dual_flux_entry_formula(self):
-        """H[0,0] = 2·E_L (inductive energy)."""
+        """H[0,0] = 2·E_L — Article Eq. (30)."""
         H = self.dual.quadratic_hamiltonian
         self.assertAlmostEqual(H[0, 0].real, 2.0 * self.E_L_code,
                                delta=self.E_L_code * 1e-5)
@@ -328,8 +328,7 @@ class TestCircuitErrors(unittest.TestCase):
         """JJ ∥ QPS on the same nodes: now supported — must not raise."""
         C = Capacitor(value=1, unit='pF')
         J = Junction(value=1, unit='GHz', cap=C)
-        L = Inductor(value=1, unit='nH')
-        P = PhaseSlip(value=1, unit='GHz', ind=L)
+        P = PhaseSlip(value=1, unit='GHz', L_value=1, L_unit='nH')
         circuit = Circuit([(0, 1, J), (0, 1, P)])
         self.assertIsNotNone(circuit.quadratic_hamiltonian)
 
@@ -442,7 +441,7 @@ class TestTopologyEdgeCases(unittest.TestCase):
 
     def test_single_qps_one_compact_charge(self):
         """Dual-transmon (one QPS): exactly one compact charge."""
-        topo = Topology([(0, 1, PhaseSlip(1, 'GHz', ind=Inductor(1, 'GHz')))])
+        topo = Topology([(0, 1, PhaseSlip(1, 'GHz', L_value=1, L_unit='GHz'))])
         self.assertEqual(topo.no_reduced_compact_charge, 1)
 
     def test_parallel_inductor_kills_compact_flux(self):
@@ -453,13 +452,13 @@ class TestTopologyEdgeCases(unittest.TestCase):
 
     def test_parallel_capacitor_kills_compact_charge(self):
         """Dual-fluxonium (QPS ∥ C): capacitor extends the QPS charge → nCC = 0."""
-        P = PhaseSlip(1, 'GHz', ind=Inductor(1, 'GHz'))
+        P = PhaseSlip(1, 'GHz', L_value=1, L_unit='GHz')
         topo = Topology([(0, 1, P), (0, 1, Capacitor(1, 'GHz'))])
         self.assertEqual(topo.no_reduced_compact_charge, 0)
 
     def test_qps_element_before_its_inductor(self):
         """In a QPS circuit, PhaseSlip (group 2) must appear before Inductor (group 3)."""
-        P = PhaseSlip(1, 'GHz', ind=Inductor(1, 'GHz'))
+        P = PhaseSlip(1, 'GHz', L_value=1, L_unit='GHz')
         topo = Topology([(0, 1, P)])
         self.assertIsInstance(topo.elements[0][2], PhaseSlip)
         self.assertIsInstance(topo.elements[1][2], Inductor)
@@ -507,7 +506,7 @@ class TestGeometryModeCounts(unittest.TestCase):
 
     def test_dual_transmon_one_compact_charge(self):
         """Dual-transmon → 0 compact flux, 1 compact charge, 0 harmonic modes."""
-        P = PhaseSlip(1, 'GHz', ind=Inductor(1, 'GHz'))
+        P = PhaseSlip(1, 'GHz', L_value=1, L_unit='GHz')
         geom = self._geom([(0, 1, P)])
         self.assertEqual(geom.no_final_compact_flux,   0)
         self.assertEqual(geom.no_final_compact_charge, 1)
@@ -522,7 +521,7 @@ class TestGeometryModeCounts(unittest.TestCase):
 
     def test_dual_fluxonium_one_harmonic_mode(self):
         """Dual-fluxonium (QPS ∥ C) → capacitor extends charge → 1 harmonic mode, 0 compact."""
-        P = PhaseSlip(1, 'GHz', ind=Inductor(1, 'GHz'))
+        P = PhaseSlip(1, 'GHz', L_value=1, L_unit='GHz')
         geom = self._geom([(0, 1, P), (0, 1, Capacitor(1, 'GHz'))])
         self.assertEqual(geom.no_final_compact_charge,  0)
         self.assertEqual(geom.no_final_compact_flux,    0)
@@ -543,8 +542,7 @@ class TestParallelQPSScaling(unittest.TestCase):
     """Physical scaling laws for N identical QPS elements in parallel."""
 
     def _build(self, n_qps, el=1.0, ep=0.5):
-        inds  = [Inductor(el, 'GHz') for _ in range(n_qps)]
-        qps   = [PhaseSlip(ep, 'GHz', ind=inds[k]) for k in range(n_qps)]
+        qps   = [PhaseSlip(ep, 'GHz', L_value=el, L_unit='GHz') for _ in range(n_qps)]
         topo  = Topology([(0, 1, qps[k]) for k in range(n_qps)])
         geom  = Geometry(topo)
         quant = Quantization(topo, geom)
@@ -590,7 +588,7 @@ def _J():
     return Junction(value=1, unit='GHz', cap=Capacitor(value=1, unit='GHz'))
 
 def _P():
-    return PhaseSlip(value=1, unit='GHz', ind=Inductor(value=1, unit='GHz'))
+    return PhaseSlip(value=1, unit='GHz', L_value=1, L_unit='GHz')
 
 
 class TestQPSRegressions(unittest.TestCase):

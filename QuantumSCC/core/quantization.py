@@ -56,6 +56,13 @@ class Quantization:
                 capacitor = elem[2]
                 quadratic_energy[i + self.topo.no_elements, i + self.topo.no_elements] = 2 * capacitor.energy()
 
+            elif isinstance(elem[2], PhaseSlip):
+                # QPS branch: no quadratic energy here.
+                # The inductive energy is carried by the companion Inductor
+                # (created in topology.py from PhaseSlip.L_value/L_unit).
+                # Only the nonlinear cos(q) term lives on the QPS branch.
+                pass
+
         # Calculate the quadratic energy function matrix after Kirchhoff
         quadratic_energy_after_Kirchhoff = self.topo.K.T @ quadratic_energy @ self.topo.K
 
@@ -100,17 +107,14 @@ class Quantization:
         vector_QPS = self.geom.V.T @ self.topo.K.T @ vector_QPS
 
         # Validate the QPS vector.
-        # The only genuine error is when the QPS charge has ZERO component in
-        # the dynamical sector (positions 0..no_indep-1): the QPS is then fully
-        # decoupled from all dynamics and its cos(q) term has no physical effect.
+        # When kcut_suppressed=True (capacitor in parallel with QPS), the QPS charge
+        # becomes a gauge variable (constant of motion, analogous to external flux in
+        # fluxonium).  Its cos(q) evaluates at the fixed gauge charge value — a constant
+        # energy offset with no dynamical effect.  Zero dynamical projection is expected.
         #
-        # Non-zero components in the non-dynamical sector (positions no_indep:)
-        # are physically legitimate: Kirchhoff's current law in multi-node rings
-        # and coupled topologies naturally projects the QPS charge onto conserved
-        # charge combinations (null vectors of Omega). These components label the
-        # charge sector (analogous to external flux in fluxonium) and are correctly
-        # discarded by the truncation to no_independent_variables below.
-        if vector_QPS.shape[1] > 0:
+        # For other topologies, zero dynamical projection means the QPS is genuinely
+        # decoupled from the dynamics, which is an error.
+        if vector_QPS.shape[1] > 0 and not has_charge_gauge:
             no_indep = self.geom.no_independent_variables
             if np.allclose(vector_QPS[:no_indep, :], 0):
                 raise ValueError(

@@ -4,9 +4,106 @@ algebra.py contains the  algebraic functions the program needs to its correct op
 """
 
 import numpy as np
+from fractions import Fraction
+from math import gcd
+from functools import reduce
 from scipy.linalg import null_space
 
 Matrix = np.ndarray
+
+
+def integer_null_space(M: np.ndarray) -> np.ndarray:
+    """
+    Compute the integer null space of a matrix with rational entries.
+
+    Uses exact arithmetic (fractions.Fraction) to compute RREF,
+    then back-substitutes to produce kernel vectors with integer entries.
+    Each column is normalized so that entries are coprime integers.
+
+    Parameters
+    ----------
+    M : np.ndarray
+        Input matrix (m x n) with integer or rational entries.
+
+    Returns
+    -------
+    K : np.ndarray
+        Integer kernel matrix (n x d) where d = n - rank(M).
+        M @ K = 0 (exact). Entries are integers (typically 0, ±1).
+        Returns shape (n, 0) if kernel is trivial.
+    """
+    m, n = M.shape
+    if m == 0:
+        return np.eye(n, dtype=float)
+
+    # Convert to exact Fraction arithmetic
+    R = [[Fraction(M[i, j]).limit_denominator(10**12) for j in range(n)] for i in range(m)]
+
+    # Forward elimination with partial pivoting → RREF
+    pivot_cols = []
+    pivot_row = 0
+    for col in range(n):
+        # Find pivot in this column
+        found = -1
+        for row in range(pivot_row, m):
+            if R[row][col] != 0:
+                found = row
+                break
+        if found == -1:
+            continue
+
+        # Swap rows
+        R[pivot_row], R[found] = R[found], R[pivot_row]
+
+        # Scale pivot row
+        scale = R[pivot_row][col]
+        for j in range(n):
+            R[pivot_row][j] /= scale
+
+        # Eliminate all other rows
+        for row in range(m):
+            if row == pivot_row:
+                continue
+            factor = R[row][col]
+            if factor != 0:
+                for j in range(n):
+                    R[row][j] -= factor * R[pivot_row][j]
+
+        pivot_cols.append(col)
+        pivot_row += 1
+
+    rank = len(pivot_cols)
+    free_cols = [j for j in range(n) if j not in pivot_cols]
+
+    if len(free_cols) == 0:
+        return np.zeros((n, 0), dtype=float)
+
+    # Build kernel vectors: for each free column, set it to 1
+    # and read off pivot values from RREF
+    K_cols = []
+    for fc in free_cols:
+        vec = [Fraction(0)] * n
+        vec[fc] = Fraction(1)
+        for i, pc in enumerate(pivot_cols):
+            vec[pc] = -R[i][fc]
+        K_cols.append(vec)
+
+    # Convert to integer vectors (multiply by LCM of denominators)
+    K = np.zeros((n, len(K_cols)), dtype=float)
+    for j, vec in enumerate(K_cols):
+        denoms = [abs(v.denominator) for v in vec if v != 0]
+        if denoms:
+            lcm_val = reduce(lambda a, b: a * b // gcd(a, b), denoms)
+        else:
+            lcm_val = 1
+        int_vec = [int(v * lcm_val) for v in vec]
+        # Normalize by GCD
+        g = reduce(gcd, [abs(x) for x in int_vec if x != 0], 0)
+        if g > 0:
+            int_vec = [x // g for x in int_vec]
+        K[:, j] = int_vec
+
+    return K
 
 def GaussJordan(M: Matrix):
     """
@@ -26,15 +123,17 @@ def GaussJordan(M: Matrix):
     """
     
     nrows, ncolumns = M.shape
-    assert nrows <= ncolumns, "Kirchhoff matrix dimensions are incorrect."
     M = M.copy()
     order = np.arange(ncolumns)
-    for i in range(nrows):
+    n_pivots = min(nrows, ncolumns)
+    for i in range(n_pivots):
         k = np.argmax(np.abs(M[i, i:]))
         if k != 0:
             Maux = M.copy()
             M[:, i], M[:, i + k] = Maux[:, i + k], Maux[:, i]
             order[i], order[i + k] = order[i + k], order[i]
+        if np.abs(M[i, i]) < 1e-15:
+            continue
         for j in range(i + 1, nrows):
             M[j, :] -= M[i, :] * M[j, i] / M[i, i]
 
@@ -338,12 +437,29 @@ def omega_symplectic_transformation(
 ) -> tuple:
     """
     Transform an antisymmetric matrix Omega to the symplectic matrix J such that
-    J = V.T @ Omega @ V, treating compact flux and compact charge subspaces separately.
+    J = V.T @ Omega @ V, using the systematic Darboux reduction from
+    QPS-JJ-reduction.pdf (PRX 2025 procedure).
 
-    The algorithm uses a Darboux-style construction. The permuted variable order is
-    (compact flux, all charges, extended flux), and the original algorithm naturally
-    handles both compact flux (JJ) and compact charge (QPS) variables, since the
-    charge block includes both compact and extended charges uniformly.
+    Variable ordering of Omega: [φ_S | φ_R | Q_S | Q_R]
+      φ_S = compact flux   (nCF)     Q_S = compact charge  (nCC)
+      φ_R = extended flux   (nEF)     Q_R = extended charge (nEC)
+
+    Block structure (Eq. 42 two-topology):
+                 φ_S    φ_R    Q_S    Q_R
+        φ_S  [   0      0      0      A   ]
+        φ_R  [   0      0    -B^T   -D^T  ]
+        Q_S  [   0      B      0      0   ]
+        Q_R  [  -A^T    D      0      *   ]
+
+    where (QPS-JJ-reduction.pdf):
+      A = ω[φ_S, Q_R]  (nCF × nEC): compact flux ↔ extended charge
+      B = ω[Q_S, φ_R]  (nCC × nEF): compact charge ↔ extended flux
+      D = ω[Q_R, φ_R]  (nEC × nEF): extended charge ↔ extended flux
+
+    Pairing order (PDF systematic reduction):
+      Phase 1: φ_S ↔ Q_R via A  (compact flux picks extended charge)
+      Phase 2: φ_R ↔ Q_S via B  (extended flux picks compact charge)
+      Phase 3: φ_R ↔ Q_R via D  (remaining extended flux picks remaining Q_R)
 
     Parameters
     ----------
@@ -413,24 +529,36 @@ def omega_symplectic_transformation(
     nF  = no_flux_variables
     nQ  = no_charge_variables
     nEF = no_extended_flux_variables
+    nCC = no_compact_charge_variables
 
-    # Detect the actual flux↔charge pairing from Omega_new.
-    # For standard circuits, compact flux pairs with compact charge (identity permutation).
-    # For crossed-pairing circuits (e.g. JJ-QPS chain), compact flux conjugates with
-    # extended charge. The greedy bijection detects this automatically:
-    # charge_perm[i] = j means charge j (in 0..nQ-1 charge indexing) is the conjugate
-    # of flux i. Leftover charges (nQ > nF) are appended in order.
-    Omega_fc = Omega_new[:nF, nF:nF + nQ]  # (nF, nQ): flux rows × charge cols
+    # ── Deterministic charge pairing (QPS-JJ-reduction.pdf) ──────────────
+    # With correctly constructed K (Eq. 42 integer kernel + [compact|extended]
+    # ordering), the block structure of Omega = K^T · omega_2B · K gives:
+    #
+    #   ω[φ_S, Q_R] = A  (non-zero)     ω[φ_S, Q_S] = 0  (structural zero)
+    #   ω[Q_S, φ_R] = B  (non-zero)     ω[φ_S, φ_R] = 0  (structural zero)
+    #   ω[Q_R, φ_R] = D  (non-zero)     ω[Q_S, Q_R] = 0  (structural zero)
+    #
+    # The pairing is determined by the block structure alone — no search needed.
+    # charge_perm[i] = j means flux i pairs with charge j (0-indexed in charge block).
+    # Charge indices: Q_S at 0..nCC-1, Q_R at nCC..nQ-1.
     charge_perm = []
-    available = list(range(nQ))
-    for i in range(nF):
-        if not available:
-            break
-        scores = [abs(Omega_fc[i, j]) for j in available]
-        best = available[int(np.argmax(scores))]
-        charge_perm.append(best)
-        available.remove(best)
-    charge_perm = charge_perm + available   # leftover charges (nQ > nF) appended in order
+    available_QR = list(range(nCC, nQ))   # Q_R indices
+    available_QS = list(range(nCC))       # Q_S indices
+
+    # Phase 1: φ_S[i] → Q_R[i]  (via A block)
+    for i in range(nCF):
+        charge_perm.append(available_QR.pop(0))
+
+    # Phase 2: φ_R[j] → Q_S[j]  (via B block)
+    # Phase 3: remaining φ_R → Q_R  (via D block)
+    for j in range(nEF):
+        if available_QS:
+            charge_perm.append(available_QS.pop(0))
+        elif available_QR:
+            charge_perm.append(available_QR.pop(0))
+
+    charge_perm += available_QS + available_QR  # leftover charges (nQ > nF)
 
     # Permute variables to working order: (compact flux, charges[charge_perm], extended flux).
     # charge_perm reorders the charge block so that the conjugate of each flux variable

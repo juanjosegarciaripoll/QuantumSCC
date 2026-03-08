@@ -206,11 +206,11 @@ class PhaseSlip:
     """
     Quantum Phase Slip (QPS) element — electromagnetic dual of Josephson Junction.
 
-    - JJ: compact flux φ_J ∈ S¹, energy = -E_J cos(2π φ/Φ₀)
-    - QPS: compact charge q_P ∈ S¹, energy = -E_P cos(π q/e)
+    Single-branch element: the QPS and its series (kinetic) inductance L_P
+    live on the SAME wire.  Energy on this branch:
+        E_QPS = -E_P cos(pi q / e)  +  E_L phi^2   (compact charge + inductive)
 
-    Requires a parallel inductor (ind) for circuit dynamics,
-    dual to how Junction requires a parallel Capacitor.
+    Dual of Junction which carries -E_J cos(phi) + E_C q^2 on its branch pair.
 
     Parameters
     ----------
@@ -218,15 +218,19 @@ class PhaseSlip:
         Phase slip amplitude E_P in frequency units.
     unit : Optional[str]
         Frequency unit (GHz, THz, etc.).
-    ind : Inductor
-        Parallel inductor (REQUIRED — provides flux dynamics).
+    L_value : float
+        Series inductance value (REQUIRED).
+    L_unit : Optional[str]
+        Unit for L_value. Frequency units (GHz, ...) specify E_L;
+        Henry units (nH, pH, ...) specify inductance directly.
     """
 
     def __init__(
         self,
         value: float,
         unit: Optional[str] = None,
-        ind=None,
+        L_value: Optional[float] = None,
+        L_unit: Optional[str] = None,
     ) -> None:
 
         if unit not in unt.freq_list and unit is not None:
@@ -243,17 +247,58 @@ class PhaseSlip:
         else:
             self.unit = unit
 
-        if ind is None:
+        # Series inductance (same physical wire)
+        if L_value is None:
             raise ValueError(
-                "For the correct operation of the program, each PhaseSlip "
-                "element must have a parallel inductor (ind=...)."
+                "Each PhaseSlip element must have a series inductance "
+                "(L_value=...).  This is the kinetic inductance of the "
+                "superconducting wire hosting the phase slip."
             )
+
+        if (
+            L_unit not in unt.freq_list
+            and L_unit not in unt.henry_list
+            and L_unit is not None
+        ):
+            raise ValueError(
+                "The L_unit for PhaseSlip is not correct. "
+                "Use a frequency unit (GHz, ...) or inductance unit (nH, ...)."
+            )
+
+        self.L_value = L_value
+        if L_unit is None:
+            self.L_unit = unt.get_unit_ind()
         else:
-            self.ind = ind
+            self.L_unit = L_unit
 
     def value(self) -> float:
         """
-        Return the value of the PhaseSlip element in the main frequency unit (GHz).
+        Return E_P in the main frequency unit (GHz by default).
         """
         pMean = self.pValue * unt.freq_list[self.unit] / unt.get_unit_freq()
         return pMean
+
+    def ind_value(self) -> float:
+        """
+        Return the series inductance in Henry.
+        """
+        if self.L_unit in unt.henry_list:
+            return self.L_value * unt.henry_list[self.L_unit]
+        else:
+            E_l = self.L_value * unt.freq_list[self.L_unit] * unt.hbar
+            return (unt.Phi0 / (2 * np.pi)) ** 2 / (2 * E_l)
+
+    def ind_energy(self) -> float:
+        """
+        Return E_L (inductive energy) in the main frequency unit (GHz by default).
+        """
+        if self.L_unit in unt.freq_list:
+            return self.L_value * unt.freq_list[self.L_unit] / unt.get_unit_freq()
+        else:
+            l = self.L_value * unt.henry_list[self.L_unit]
+            return (
+                (unt.Phi0 / (2 * np.pi)) ** 2
+                / (2 * l)
+                / unt.hbar
+                / unt.get_unit_freq()
+            )
