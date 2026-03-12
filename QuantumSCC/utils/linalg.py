@@ -155,11 +155,7 @@ def reverseGaussJordan(M: Matrix):
             Diagonal form of the input matrix once the algorithm has been applied.
     """
 
-    if False:
-        factor = 1 / np.diag(M)
-        M = factor[:, np.newaxis] * M
-    else:
-        M = np.diag(1.0 / np.diag(M)) @ M
+    M = np.diag(1.0 / np.diag(M)) @ M
 
     for i, row in reversed(list(enumerate(M))):
         for j in range(i):
@@ -189,65 +185,6 @@ def remove_zero_rows(M: Matrix, tol: float=1e-16):
     M = M[(row_norm_1 > tol), :]
     return M
 
-
-def GS_algorithm(M: Matrix, normal: bool=True, delete_zeros: bool=True ,tol: float=1e-14):
-    """
-    Apply the Gram-Schmidt (GS) algorithm to the columns of the matrix M.
-
-    Parameters
-    ----------
-        M: Matrix
-            Matrix to which columns the GS algorithm is applied
-        normal: bool
-            Parameter to indicate if the algorithm normalize the resulting orthogonal vectors or not. 
-        delete_zeros: boll
-            Parameter to indicate if the algorithm deletes the zero columns or not. By default it is True.
-        tol: float
-            Tolerance below which a number is considered 0. By default it is 1e-14
-
-    Returns
-    ----------
-        M_out: Matrix 
-            Resulting matrix with the columns being orthognormal (normal=True) or just orthogonal (normal=False)
-    """
-
-    # Ensure the first vector is not zero
-    if np.all(np.abs(M[:,0]) < tol):
-        raise ValueError('The first vector of input matrix M must be different from zero')
-
-    # Preallocate M_out
-    M_out = np.zeros((M.shape[0], M.shape[1]))
-
-    # Define and normalize if normal = True the first vectors
-    M_out[:,0] = M[:,0]
-    if normal == True:
-        M_out[:,0] = M_out[:,0]/np.sqrt(M_out[:,0].T @ M_out[:,0])
-
-    # Orthogonalize (normal=false) or orthonormalize (normal=True) the other vectors
-    for i in range(1, M.shape[1]):
-        sum = np.zeros([M.shape[0], 1])
-
-        for j in range(i):
-            if np.any(np.abs(M_out[:,j]) > tol):
-                sum[:,0] = sum[:,0] + ((M[:,i].T @ M_out[:,j])/(M_out[:,j].T @ M_out[:,j])) * M_out[:,j] 
-
-        M_out[:,i] = M[:,i] - sum[:,0]
-
-        if normal == True:
-            if np.any(np.abs(M_out[:,i]) > tol):
-                M_out[:,i] = M_out[:,i]/np.sqrt(M_out[:,i].T @ M_out[:,i])
-
-    # Delete zero columns if delete_zeros = True
-    if delete_zeros == True:
-        zero_list = []
-        for i in range(M_out.shape[1]):
-            if not np.any(np.abs(M_out[:, i]) > tol): 
-                zero_list.append(i)
-                
-        M_out = np.delete(M_out, zero_list, axis=1) 
-
-    return M_out
- 
 
 def pseudo_inv(M: Matrix, tol: float=1e-15):
     """
@@ -281,52 +218,6 @@ def pseudo_inv(M: Matrix, tol: float=1e-15):
     # Get the pseudo-inverse
     pseudo_inv = Vt.T @ S_inv @ U.T
     return pseudo_inv
-
-
-def nonzero_indexes(M: Matrix, tol: float=1e-14):
-    """
-    It returns the row indexes of the non-zero elements in the matrix M, with a tolerance.
-    Parameters
-    ----------
-        M: Matrix
-            Matrix from which we want the non-zero row indexes.
-        tol: float
-            Tolerance below which the element is considered zero. By default, it is 1e-14.
-    Returns
-    ----------
-        indexes: list
-            List of row indexes of the non-zero elements in the input matrix M.
-    """
-    indexes = []
-    for j in range(M.shape[1]):
-        for i in range(M.shape[0]):
-            if abs(M[i,j]) > tol:
-                indexes.append(i)
-
-    indexes = sorted(set(indexes))
-    
-    return indexes
-
-
-def first_zero_index(v: np.array, tol: float=1e-14):
-    """
-    It returns the index of the first zero element in the vector v with a certain tolerance
-
-    Parameters
-    ----------
-        v: np.array
-            Vector from which we want the first zero index.
-        tol: float
-            Tolerance below which the element is considered zero. By default, it is 1e-14.
-    Returns
-    ----------
-    i: int
-        Index of the first zero element in the vector v.
-    """
-    for i, val in enumerate(v):
-        if abs(val) < tol:  
-            return i
-    return None  # If there are no zero elements, it returns None
 
 
 def proportional_rows(M: Matrix , tol: float=1e-14):

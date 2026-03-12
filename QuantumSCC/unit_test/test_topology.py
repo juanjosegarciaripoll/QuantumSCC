@@ -69,16 +69,16 @@ import pytest
 
 _CIRCUITS = {
     'LC': [(0, 1, Inductor(1, 'GHz')), (0, 1, Capacitor(1, 'GHz'))],
-    'JJ': [(0, 1, Junction(1, 'GHz', cap=Capacitor(1, 'GHz')))],
-    'JJ+L': [(0, 1, Junction(1, 'GHz', cap=Capacitor(1, 'GHz'))),
+    'JJ': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz'))],
+    'JJ+L': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz')),
              (0, 1, Inductor(1, 'GHz'))],
-    'QPS': [(0, 1, PhaseSlip(1, 'GHz', L_value=1, L_unit='GHz'))],
-    'JJ||QPS': [(0, 1, Junction(1, 'GHz', cap=Capacitor(1, 'GHz'))),
-                (0, 1, PhaseSlip(1, 'GHz', L_value=1, L_unit='GHz'))],
-    'JJ-QPS': [(0, 1, Junction(1, 'GHz', cap=Capacitor(1, 'GHz'))),
-               (1, 2, PhaseSlip(1, 'GHz', L_value=1, L_unit='GHz'))],
-    '2JJ': [(0, 1, Junction(1, 'GHz', cap=Capacitor(1, 'GHz'))),
-            (1, 2, Junction(1, 'GHz', cap=Capacitor(1, 'GHz'))),
+    'QPS': [(0, 1, PhaseSlip(1, 'GHz')), (0, 1, Inductor(1, 'GHz'))],
+    'JJ||QPS': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz')),
+                (0, 1, PhaseSlip(1, 'GHz')), (0, 1, Inductor(1, 'GHz'))],
+    'JJ-QPS': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz')),
+               (1, 2, PhaseSlip(1, 'GHz')), (1, 2, Inductor(1, 'GHz'))],
+    '2JJ': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz')),
+            (1, 2, Junction(1, 'GHz')), (1, 2, Capacitor(1, 'GHz')),
             (0, 2, Capacitor(1, 'GHz'))],
 }
 

@@ -57,10 +57,8 @@ class Quantization:
                 quadratic_energy[i + self.topo.no_elements, i + self.topo.no_elements] = 2 * capacitor.energy()
 
             elif isinstance(elem[2], PhaseSlip):
-                # QPS branch: no quadratic energy here.
-                # The inductive energy is carried by the companion Inductor
-                # (created in topology.py from PhaseSlip.L_value/L_unit).
-                # Only the nonlinear cos(q) term lives on the QPS branch.
+                # QPS branch: only nonlinear cos(q) term, no quadratic energy.
+                # Any associated inductance is a separate Inductor element.
                 pass
 
         # Calculate the quadratic energy function matrix after Kirchhoff

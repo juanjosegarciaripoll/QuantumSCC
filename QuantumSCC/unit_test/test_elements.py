@@ -96,36 +96,27 @@ class TestInductorConversions(unittest.TestCase):
 
 class TestJunctionConversions(unittest.TestCase):
 
-    def _cap(self):
-        return Capacitor(1, unit='pF')
-
     def test_value_ghz_returns_1(self):
         """Junction(1 GHz).value() == 1.0."""
-        self.assertAlmostEqual(Junction(1.0, unit='GHz', cap=self._cap()).value(), 1.0, places=10)
+        self.assertAlmostEqual(Junction(1.0, unit='GHz').value(), 1.0, places=10)
 
     def test_value_thz_converts_to_ghz(self):
         """Junction(1 THz).value() == 1000.0 GHz."""
-        self.assertAlmostEqual(Junction(1.0, unit='THz', cap=self._cap()).value(), 1000.0, places=7)
+        self.assertAlmostEqual(Junction(1.0, unit='THz').value(), 1000.0, places=7)
 
     def test_value_mhz_converts_to_ghz(self):
         """Junction(1000 MHz).value() == 1.0 GHz."""
-        self.assertAlmostEqual(Junction(1000.0, unit='MHz', cap=self._cap()).value(), 1.0, places=8)
+        self.assertAlmostEqual(Junction(1000.0, unit='MHz').value(), 1.0, places=8)
 
-    def test_missing_cap_raises(self):
-        """Junction without a parallel capacitor raises ValueError."""
-        with self.assertRaises(ValueError):
-            Junction(1, unit='GHz')
+    def test_bare_junction_creates(self):
+        """Junction without cap parameter creates successfully."""
+        j = Junction(1, unit='GHz')
+        self.assertAlmostEqual(j.value(), 1.0, places=10)
 
     def test_invalid_unit_raises(self):
         """Junction with a non-frequency unit raises ValueError."""
         with self.assertRaises(ValueError):
-            Junction(1, unit='nH', cap=self._cap())
-
-    def test_parallel_cap_stored(self):
-        """cap attribute must be the capacitor passed at construction."""
-        cap = self._cap()
-        j = Junction(1.0, unit='GHz', cap=cap)
-        self.assertIs(j.cap, cap)
+            Junction(1, unit='nH')
 
 
 # ── PhaseSlip ─────────────────────────────────────────────────────────────────
@@ -134,46 +125,30 @@ class TestPhaseSlipConversions(unittest.TestCase):
 
     def test_value_ghz_returns_1(self):
         """PhaseSlip(1 GHz).value() == 1.0."""
-        self.assertAlmostEqual(PhaseSlip(1.0, unit='GHz', L_value=1, L_unit='nH').value(), 1.0, places=10)
+        self.assertAlmostEqual(PhaseSlip(1.0, unit='GHz').value(), 1.0, places=10)
 
     def test_value_thz_converts_to_ghz(self):
         """PhaseSlip(1 THz).value() == 1000.0 GHz."""
-        self.assertAlmostEqual(PhaseSlip(1.0, unit='THz', L_value=1, L_unit='nH').value(), 1000.0, places=7)
+        self.assertAlmostEqual(PhaseSlip(1.0, unit='THz').value(), 1000.0, places=7)
 
     def test_value_mhz_converts_to_ghz(self):
         """PhaseSlip(1000 MHz).value() == 1.0 GHz."""
-        self.assertAlmostEqual(PhaseSlip(1000.0, unit='MHz', L_value=1, L_unit='nH').value(), 1.0, places=8)
+        self.assertAlmostEqual(PhaseSlip(1000.0, unit='MHz').value(), 1.0, places=8)
 
-    def test_missing_L_value_raises(self):
-        """PhaseSlip without L_value raises ValueError."""
-        with self.assertRaises(ValueError):
-            PhaseSlip(1, unit='GHz')
+    def test_bare_phaseslip_creates(self):
+        """PhaseSlip without L_value parameter creates successfully."""
+        p = PhaseSlip(1, unit='GHz')
+        self.assertAlmostEqual(p.value(), 1.0, places=10)
 
     def test_invalid_unit_nH_raises(self):
         """PhaseSlip with an inductance unit raises ValueError."""
         with self.assertRaises(ValueError):
-            PhaseSlip(1, unit='nH', L_value=1, L_unit='nH')
+            PhaseSlip(1, unit='nH')
 
     def test_invalid_unit_pF_raises(self):
         """PhaseSlip with a capacitance unit raises ValueError."""
         with self.assertRaises(ValueError):
-            PhaseSlip(1, unit='pF', L_value=1, L_unit='nH')
-
-    def test_L_value_and_L_unit_stored(self):
-        """L_value and L_unit must be stored as passed at construction."""
-        ps = PhaseSlip(1.0, unit='GHz', L_value=2.5, L_unit='nH')
-        self.assertEqual(ps.L_value, 2.5)
-        self.assertEqual(ps.L_unit, 'nH')
-
-    def test_ind_energy_ghz_unit(self):
-        """ind_energy() with L_unit='GHz' returns E_L in GHz."""
-        ps = PhaseSlip(1.0, unit='GHz', L_value=3.0, L_unit='GHz')
-        self.assertAlmostEqual(ps.ind_energy(), 3.0, places=10)
-
-    def test_ind_value_nH_unit(self):
-        """ind_value() with L_unit='nH' returns inductance in Henry."""
-        ps = PhaseSlip(1.0, unit='GHz', L_value=1, L_unit='nH')
-        self.assertAlmostEqual(ps.ind_value(), 1e-9, places=21)
+            PhaseSlip(1, unit='pF')
 
 
 if __name__ == '__main__':

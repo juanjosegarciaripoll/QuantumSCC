@@ -34,8 +34,8 @@ class Topology:
         Initializes the topology analysis.
         Processes the input list of elements to identify nodes and categorize components.
 
-        Element ordering: [JJ | Cap (JJ-parallel + standalone) | QPS (single branch) | Ind (standalone only)]
-        QPS is a single branch — its series inductance is internal to the PhaseSlip element.
+        Element ordering: [JJ | Cap | QPS | Ind]
+        All elements are user-provided — no automatic companion creation.
         """
         self.debug = debug
 
@@ -51,9 +51,7 @@ class Topology:
             print(f"Nodes detected: {self.node_dictionary}")
 
         # Categorize elements — order: [JJ | Cap | QPS | Ind]
-        # Order: [JJ | Cap (JJ-parallel + standalone) | QPS | Ind (QPS-companion + standalone)]
-        # PhaseSlip internally creates a companion Inductor on same nodes
-        # (the series inductance L_P — same physical wire, two graph branches for omega_2B)
+        # All elements are user-provided. No automatic companion creation.
         self.elements = []
         self.no_JJ = 0
         self.no_Capacitors = 0
@@ -66,12 +64,9 @@ class Topology:
                 self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt])
                 self.no_JJ += 1
 
-        # Capacitor branches: JJ-parallel caps + standalone capacitors
+        # Capacitor branches (all user-provided)
         for a, b, elt in elements_list:
-            if isinstance(elt, Junction):
-                self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt.cap])
-                self.no_Capacitors += 1
-            elif isinstance(elt, Capacitor):
+            if isinstance(elt, Capacitor):
                 self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt])
                 self.no_Capacitors += 1
 
@@ -81,14 +76,7 @@ class Topology:
                 self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt])
                 self.no_QPS += 1
 
-        # Inductor branches: QPS-companion inductors FIRST, then standalone.
-        # Companions must come before standalone so that companion for QPS index i
-        # is at element index (qps_start + no_QPS + i).
-        for a, b, elt in elements_list:
-            if isinstance(elt, PhaseSlip):
-                companion_ind = Inductor(elt.L_value, elt.L_unit)
-                self.elements.append([self.node_dictionary[a], self.node_dictionary[b], companion_ind])
-                self.no_Inductors += 1
+        # Inductor branches (all user-provided)
         for a, b, elt in elements_list:
             if isinstance(elt, Inductor):
                 self.elements.append([self.node_dictionary[a], self.node_dictionary[b], elt])
@@ -100,31 +88,18 @@ class Topology:
             print(f"Element Counts -> JJ: {self.no_JJ}, Caps: {self.no_Capacitors}, "
                   f"QPS: {self.no_QPS}, Inds: {self.no_Inductors}, Total: {self.no_elements}")
 
-        # Collect node pairs of standalone Capacitor elements (not JJ-parallel caps).
-        # Used to detect QPS shunted by a bare capacitor → suppresses compact charge.
-        self.bare_cap_node_pairs = set()
+        # Collect node pairs of Capacitor elements.
+        # Used to detect QPS shunted by a capacitor → suppresses compact charge.
+        self.cap_node_pairs = set()
         for a, b, elt in elements_list:
             if isinstance(elt, Capacitor):
                 pair = frozenset([self.node_dictionary[a], self.node_dictionary[b]])
-                self.bare_cap_node_pairs.add(pair)
-
-        # Collect node pairs with at least one JJ (for crossed-pairing detection).
-        self.jj_node_pairs = set()
-        for a, b, elt in elements_list:
-            if isinstance(elt, Junction):
-                self.jj_node_pairs.add(frozenset([self.node_dictionary[a], self.node_dictionary[b]]))
-
-        # Collect node pairs of standalone Inductors (for QPS compact charge detection).
-        self.bare_ind_node_pairs = set()
-        for a, b, elt in elements_list:
-            if isinstance(elt, Inductor):
-                pair = frozenset([self.node_dictionary[a], self.node_dictionary[b]])
-                self.bare_ind_node_pairs.add(pair)
+                self.cap_node_pairs.add(pair)
 
         # Run Kirchhoff analysis
         (self.Fcut, self.Floop, self.F, self.K,
          self.no_reduced_compact_flux, self.no_reduced_compact_charge,
-         self.kcut_suppressed, self.qps_groups) = self.Kirchhoff()
+         self.kcut_suppressed) = self.Kirchhoff()
 
     def Kirchhoff(self):
         """
@@ -210,9 +185,6 @@ class Topology:
         else:
             Kloop = np.hstack([Kloop_compact, Kloop_extended])
             Kloop = _independent_columns_ordered(Kloop)
-            # Orthonormalize extended columns against compact to respect
-            # element symmetry (identical elements get equal coupling vectors).
-            Kloop = _orthonormalize_extended(Kloop, Kloop_compact.shape[1])
 
         # Detect and simplify gauge (non-dynamical) compact flux variables
         if no_reduced_compact_flux > 1:
@@ -234,72 +206,57 @@ class Topology:
         #   E_cut = Fcut[:, two-island]  → extended charge
         #   D_cut = Fcut[:, one-island]  → ker(D_cut) = compact charge
         #
-        # For each unique QPS node pair, exactly one compact charge mode exists.
-        # Multiple QPS on the same node pair share one mode (dual of multiple
-        # JJ in parallel sharing one compact flux mode).
-        #
-        # Because our model uses companion Inductors (2 branches per QPS for
-        # omega_2B), ker(D_cut) may overcount for parallel QPS.  We compute
-        # the compact charge per node-pair group using Fcut restricted to the
-        # representative (QPS, Ind) pair — equivalent to sub-indexing D_cut.
+        # Symmetric with compact flux detection: just compute ker(D_cut) directly.
         E_cut = Fcut[:, :no_two_island]
         D_cut = Fcut[:, no_two_island:]
 
+        # Count distinct QPS node pairs for compact charge cap.
         qps_start = self.no_JJ + self.no_Capacitors
+        qps_node_pairs = set()
+        for i in range(self.no_QPS):
+            na, nb = self.elements[qps_start + i][0], self.elements[qps_start + i][1]
+            qps_node_pairs.add(frozenset([na, nb]))
+        no_qps_groups = len(qps_node_pairs)
 
-        if self.no_QPS == 0:
+        if no_one_island == 0 or no_qps_groups == 0:
             Kcut_compact = np.zeros((self.no_elements, 0))
-            no_reduced_compact_charge = 0
-            qps_groups = {}
         else:
-            # Group QPS indices by their node pair
-            qps_groups = {}
-            for i in range(self.no_QPS):
-                na, nb = self.elements[qps_start + i][0], self.elements[qps_start + i][1]
-                pair = frozenset([na, nb])
-                if pair not in qps_groups:
-                    qps_groups[pair] = []
-                qps_groups[pair].append(i)
+            K_D_cut = integer_null_space(D_cut)
 
-            # One compact charge mode per unique node pair
-            Kcut_compact = np.zeros((self.no_elements, len(qps_groups)))
-            for col_idx, (pair, qps_indices) in enumerate(qps_groups.items()):
-                # Representative: first QPS in this group + its companion inductor
-                rep = qps_indices[0]
-                rep_qps_col = qps_start + rep
-                rep_ind_col = qps_start + self.no_QPS + rep
+            # Cap at number of distinct QPS node-pair groups.
+            # The D_cut kernel can be larger than the physical compact charge
+            # count when multiple QPS+Ind share the same nodes.  Each QPS
+            # node-pair group contributes at most 1 compact charge mode.
+            # Sort columns to prefer QPS-pure directions (zero Ind components)
+            # so the first columns are the best compact representatives.
+            if K_D_cut.shape[1] > no_qps_groups:
+                ind_zeros = np.sum(np.abs(K_D_cut[self.no_QPS:, :]) < 1e-12, axis=0)
+                order = np.argsort(-ind_zeros)  # most Ind-zeros first
+                K_D_cut = K_D_cut[:, order[:no_qps_groups]]
 
-                # Compact charge from representative pair: integer kernel of
-                # Fcut restricted to the 2 representative columns
-                K_rep = integer_null_space(Fcut[:, [rep_qps_col, rep_ind_col]])
-                v_qps, v_ind = K_rep[0, 0], K_rep[1, 0]
+            # Embed into full element space (pad with zeros for two-island columns)
+            Kcut_compact = np.vstack((
+                np.zeros((no_two_island, K_D_cut.shape[1])),
+                K_D_cut,
+            ))
 
-                # Apply the same compact mode to ALL (QPS, Ind) pairs in this group
-                for i in qps_indices:
-                    Kcut_compact[qps_start + i, col_idx] = v_qps
-                    Kcut_compact[qps_start + self.no_QPS + i, col_idx] = v_ind
+        no_reduced_compact_charge = Kcut_compact.shape[1]
 
-            no_reduced_compact_charge = len(qps_groups)
-
-        # Suppress compact charge for QPS shunted by bare capacitor
+        # Suppress compact charge for QPS shunted by a capacitor on the same nodes.
+        # A parallel capacitor provides a charge shunt path, making QPS charge extended.
         kcut_suppressed = False
-        if no_reduced_compact_charge > 0:
-            suppressed_pairs = set(
-                frozenset([self.elements[qps_start + i][0], self.elements[qps_start + i][1]])
-                for i in range(self.no_QPS)
-                if frozenset([self.elements[qps_start + i][0], self.elements[qps_start + i][1]])
-                in self.bare_cap_node_pairs
-            )
+        if no_reduced_compact_charge > 0 and no_qps_groups > 0:
+            suppressed_pairs = {p for p in qps_node_pairs if p in self.cap_node_pairs}
             n_suppressed = len(suppressed_pairs)
-            n_total_groups = len(qps_groups)
+            n_total = no_qps_groups
 
-            if n_suppressed == n_total_groups:
+            if n_suppressed == n_total:
                 no_reduced_compact_charge = 0
                 Kcut_compact = np.zeros((self.no_elements, 0))
                 kcut_suppressed = True
             elif n_suppressed > 0:
                 raise NotImplementedError(
-                    f"{n_suppressed} of {n_total_groups} QPS node pairs are suppressed "
+                    f"{n_suppressed} of {n_total} QPS node pairs are suppressed "
                     "by a parallel capacitor. Partial suppression is not yet supported."
                 )
 
@@ -311,9 +268,6 @@ class Topology:
         else:
             Kcut = np.hstack([Kcut_compact, Kcut_extended])
             Kcut = _independent_columns_ordered(Kcut)
-            # Orthonormalize extended columns against compact to respect
-            # element symmetry (identical elements get equal coupling vectors).
-            Kcut = _orthonormalize_extended(Kcut, Kcut_compact.shape[1])
 
         if self.debug:
             print(f"  E_cut shape: {E_cut.shape}  (Fcut restricted to JJ+Cap)")
@@ -345,37 +299,7 @@ class Topology:
         self.D_cut  = D_cut    # Fcut[:, one-island]   — ker → compact charge
 
         return (Fcut, Floop, F, K, no_reduced_compact_flux,
-                no_reduced_compact_charge, kcut_suppressed, qps_groups)
-
-
-def _orthonormalize_extended(K: np.ndarray, n_compact: int) -> np.ndarray:
-    """
-    Given K = [compact_cols | extended_cols], orthonormalize the extended
-    columns against the compact columns using SVD.
-
-    This ensures that identical elements (e.g. N parallel QPS) receive
-    equal coupling vectors, because SVD respects the matrix symmetry
-    that Floop.T / Fcut.T raw columns break.
-
-    The compact columns are kept unchanged (integer entries preserved).
-    """
-    if n_compact == 0 or K.shape[1] <= n_compact:
-        return K
-    C = K[:, :n_compact]                  # compact block (integer, keep as-is)
-    E = K[:, n_compact:]                  # extended block (to be replaced)
-    n_ext = E.shape[1]
-    # Project out the compact directions from E
-    # Q = orthonormal basis of compact column space
-    Q, _ = np.linalg.qr(C, mode='reduced')
-    E_proj = E - Q @ (Q.T @ E)           # remove compact components
-    # SVD to get orthonormal basis of the projected extended space
-    U, S, _ = np.linalg.svd(E_proj, full_matrices=False)
-    # Keep columns with nonzero singular values
-    mask = S > 1e-12
-    E_orth = U[:, mask]
-    assert E_orth.shape[1] == n_ext, \
-        f"Extended rank mismatch: expected {n_ext}, got {E_orth.shape[1]}"
-    return np.hstack([C, E_orth])
+                no_reduced_compact_charge, kcut_suppressed)
 
 
 def _independent_columns_ordered(M: np.ndarray, tol: float = 1e-12) -> np.ndarray:
