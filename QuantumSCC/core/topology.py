@@ -39,6 +39,44 @@ class Topology:
         """
         self.debug = debug
 
+        # ── Input validation ───────────────────────────────────────────
+        if len(elements_list) == 0:
+            raise ValueError("Circuit must have at least one element.")
+
+        for a, b, elt in elements_list:
+            if a == b:
+                raise ValueError(
+                    f"Self-loop detected: element {type(elt).__name__} "
+                    f"connects node {a} to itself. "
+                    "A circuit element must connect two distinct nodes."
+                )
+
+        # Check graph connectivity (union-find)
+        nodes_set = set()
+        for a, b, _ in elements_list:
+            nodes_set.add(a)
+            nodes_set.add(b)
+        parent = {n: n for n in nodes_set}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(x, y):
+            parent[find(x)] = find(y)
+
+        for a, b, _ in elements_list:
+            union(a, b)
+
+        roots = {find(n) for n in nodes_set}
+        if len(roots) > 1:
+            raise ValueError(
+                f"Disconnected circuit: {len(roots)} separate components detected. "
+                "All nodes must be connected through circuit elements."
+            )
+
         # Identify nodes
         nodes = set([a for a, _, _ in elements_list] + [b for _, b, _ in elements_list])
         self.node_dictionary = {a: i for i, a in enumerate(nodes)}

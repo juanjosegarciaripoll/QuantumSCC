@@ -151,5 +151,54 @@ class TestPhaseSlipConversions(unittest.TestCase):
             PhaseSlip(1, unit='pF')
 
 
+# ── Positive energy validation ────────────────────────────────────────────────
+
+class TestPositiveEnergyValidation(unittest.TestCase):
+    """All elements must reject zero and negative energy/value."""
+
+    def test_capacitor_negative_raises(self):
+        with self.assertRaises(ValueError):
+            Capacitor(-1, 'GHz')
+
+    def test_capacitor_zero_raises(self):
+        with self.assertRaises(ValueError):
+            Capacitor(0, 'GHz')
+
+    def test_capacitor_negative_farads_raises(self):
+        with self.assertRaises(ValueError):
+            Capacitor(-1, 'pF')
+
+    def test_inductor_negative_raises(self):
+        with self.assertRaises(ValueError):
+            Inductor(-1, 'GHz')
+
+    def test_inductor_zero_raises(self):
+        with self.assertRaises(ValueError):
+            Inductor(0, 'nH')
+
+    def test_junction_negative_raises(self):
+        with self.assertRaises(ValueError):
+            Junction(-5, 'GHz')
+
+    def test_junction_zero_raises(self):
+        with self.assertRaises(ValueError):
+            Junction(0, 'GHz')
+
+    def test_phaseslip_negative_raises(self):
+        with self.assertRaises(ValueError):
+            PhaseSlip(-1, 'GHz')
+
+    def test_phaseslip_zero_raises(self):
+        with self.assertRaises(ValueError):
+            PhaseSlip(0, 'GHz')
+
+    def test_positive_values_accepted(self):
+        """Positive values should work fine (sanity check)."""
+        Capacitor(1, 'GHz')
+        Inductor(1, 'GHz')
+        Junction(1, 'GHz')
+        PhaseSlip(1, 'GHz')
+
+
 if __name__ == '__main__':
     unittest.main()

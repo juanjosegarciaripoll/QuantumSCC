@@ -187,10 +187,14 @@ class Quantization:
                 quadratic_hamiltonian = TEF_11 - TEF_12 @ TEF_22_inv @ TEF_21
 
 
-        # Verify the resulting quadratic Hamiltonian is block diagonal and symmetric
-        assert np.allclose(quadratic_hamiltonian[quadratic_hamiltonian.shape[0]:, :quadratic_hamiltonian.shape[1]], 0) and \
-            np.allclose(quadratic_hamiltonian[:quadratic_hamiltonian.shape[0], quadratic_hamiltonian.shape[1]:], 0), \
-            'The classical Hamiltonian matrix must be block diagonal. There could be an error in the construction of the basis change matrix V'
+        # Verify the resulting quadratic Hamiltonian is block diagonal and symmetric.
+        # H = [[H_φφ, H_φq], [H_qφ, H_qq]] where n = no_indep // 2.
+        # Block-diagonal means H_φq = H_qφ = 0.
+        n_half = quadratic_hamiltonian.shape[0] // 2
+        if n_half > 0 and quadratic_hamiltonian.shape[0] % 2 == 0:
+            assert np.allclose(quadratic_hamiltonian[:n_half, n_half:], 0) and \
+                np.allclose(quadratic_hamiltonian[n_half:, :n_half], 0), \
+                'The classical Hamiltonian matrix must be block diagonal. There could be an error in the construction of the basis change matrix V'
         
         assert np.allclose(quadratic_hamiltonian.T, quadratic_hamiltonian), "Something goes wrong. Quadratic Hamiltonian matrix must be symmetric."
 

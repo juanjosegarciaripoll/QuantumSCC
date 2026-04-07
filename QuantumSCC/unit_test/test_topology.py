@@ -180,3 +180,35 @@ def test_compact_charge_in_ker_Dcut(name):
     Kcut_compact_one_island = topo.K[ne + no_two_island:, n_flux_vars:n_flux_vars + nCC]
     assert np.allclose(topo.D_cut @ Kcut_compact_one_island, 0), \
         f"{name}: D_cut @ compact_charge != 0"
+
+
+# ── Input validation tests ─────────────────────────────────────────────
+
+def test_empty_circuit_raises():
+    """Empty element list must raise ValueError."""
+    with pytest.raises(ValueError, match="at least one element"):
+        Topology([])
+
+
+def test_self_loop_raises():
+    """Self-loop (node connects to itself) must raise ValueError."""
+    with pytest.raises(ValueError, match="Self-loop"):
+        Topology([(0, 0, Capacitor(1, 'GHz'))])
+
+
+def test_disconnected_graph_raises():
+    """Disconnected graph must raise ValueError."""
+    with pytest.raises(ValueError, match="Disconnected"):
+        Topology([
+            (0, 1, Capacitor(1, 'GHz')),
+            (2, 3, Inductor(1, 'GHz')),
+        ])
+
+
+def test_connected_graph_accepted():
+    """Connected graph with 3+ nodes should work fine."""
+    topo = Topology([
+        (0, 1, Capacitor(1, 'GHz')),
+        (1, 2, Inductor(1, 'GHz')),
+    ])
+    assert topo.no_nodes == 3

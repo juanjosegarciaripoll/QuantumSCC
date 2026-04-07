@@ -40,6 +40,12 @@ class Capacitor:
                 "Look at the documentation for the correct input format."
             )
 
+        if value <= 0:
+            raise ValueError(
+                f"Capacitor value must be positive, got {value}. "
+                "Energy (E_C) and capacitance (C) are physical quantities > 0."
+            )
+
         self.cValue = value
         self.type = type(self)
 
@@ -107,6 +113,12 @@ class Inductor:
             raise ValueError(
                 "The input unit for the inductor is not correct. "
                 "Look at the documentation for the correct input format."
+            )
+
+        if value <= 0:
+            raise ValueError(
+                f"Inductor value must be positive, got {value}. "
+                "Energy (E_L) and inductance (L) are physical quantities > 0."
             )
 
         self.lValue = value
@@ -177,6 +189,11 @@ class Junction:
                 "The input unit for the Josephson Junction is not correct."
             )
 
+        if value <= 0:
+            raise ValueError(
+                f"Junction energy E_J must be positive, got {value}."
+            )
+
         self.jValue = value
         self.type = type(self)
 
@@ -218,6 +235,11 @@ class PhaseSlip:
             raise ValueError(
                 "The input unit for the PhaseSlip element is not correct. "
                 "It must be a frequency unit (GHz, THz, ...)."
+            )
+
+        if value <= 0:
+            raise ValueError(
+                f"PhaseSlip energy E_P must be positive, got {value}."
             )
 
         self.pValue = value
