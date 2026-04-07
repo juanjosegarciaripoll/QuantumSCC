@@ -104,6 +104,36 @@ class Quantization:
         # Calculate the QPS vector under the change of variables
         vector_QPS = self.geom.V.T @ self.topo.K.T @ vector_QPS
 
+        # ── Doubly-discrete gauge redistribution for parallel QPS ──────
+        # When N QPS share the same node pair, the N-1 charge differences
+        # are gauge (zero rows in Ω) with integer spectra (compact S¹).
+        # Since cos(2π · integer) = 1, all QPS on the same pair couple
+        # identically to the single dynamical charge Q.
+        # Ref: arXiv:2412.06880 §III (k/j/s-mode decomposition)
+        no_indep = self.geom.no_independent_variables
+        if vector_QPS.shape[1] > 1:
+            qps_indices = [i for i, elem in enumerate(self.topo.elements)
+                           if isinstance(elem[2], PhaseSlip)]
+            pair_groups = {}
+            for col_idx, elem_idx in enumerate(qps_indices):
+                pair = frozenset([self.topo.elements[elem_idx][0],
+                                  self.topo.elements[elem_idx][1]])
+                pair_groups.setdefault(pair, []).append(col_idx)
+
+            for pair, cols in pair_groups.items():
+                if len(cols) <= 1:
+                    continue
+                # Find representative with non-zero dynamical projection
+                rep_vec = None
+                for c in cols:
+                    if not np.allclose(vector_QPS[:no_indep, c], 0):
+                        rep_vec = vector_QPS[:, c].copy()
+                        break
+                if rep_vec is not None:
+                    for c in cols:
+                        if np.allclose(vector_QPS[:no_indep, c], 0):
+                            vector_QPS[:, c] = rep_vec
+
         # Validate the QPS vector.
         # When kcut_suppressed=True (capacitor in parallel with QPS), the QPS charge
         # becomes a gauge variable (constant of motion, analogous to external flux in
@@ -212,20 +242,35 @@ class Quantization:
         # Get the quantum canonical Hamiltonian and the basis change matrix
         J = np.block([[np.zeros((extended_dimension//2, extended_dimension//2)), np.eye(extended_dimension//2)],
                       [-np.eye(extended_dimension//2), np.zeros((extended_dimension//2, extended_dimension//2))]])
-        
+
         dynamical_matrix = J @ extended_quadratic_hamiltonian
-        _, T = symplectic_transformation(dynamical_matrix, no_flux_variables=extended_quadratic_hamiltonian.shape[0]//2)
-        extended_canonical_hamiltonian = T.T @ extended_quadratic_hamiltonian @ T
 
-        # Proceed with the second quantization: Express the quantum Hamiltonian in the ladder operators basis.
-        I = np.eye(len(extended_canonical_hamiltonian)//2)
-        G = (1 / np.sqrt(2)) * np.block([[I, I], [-1j * I, 1j * I]])
+        # Check for zero-frequency modes (Jordan blocks in the dynamical matrix).
+        # This happens when the extended sector contains variables without a conjugate
+        # energy pair (e.g., flux with inductance but no capacitance on that node).
+        # In this case symplectic diagonalization is not applicable.
+        eigvals_dyn = np.linalg.eigvals(dynamical_matrix) if extended_dimension > 0 else np.array([])
+        has_oscillators = extended_dimension > 0 and not np.allclose(eigvals_dyn, 0)
 
-        extended_quantum_hamiltonian = np.conj(G.T) @ extended_canonical_hamiltonian @ G
+        if has_oscillators:
+            _, T = symplectic_transformation(dynamical_matrix, no_flux_variables=extended_quadratic_hamiltonian.shape[0]//2)
+            extended_canonical_hamiltonian = T.T @ extended_quadratic_hamiltonian @ T
 
-        # Verify the resulting Hamiltonian in the ladder operators basis is equal to the canonical Hamiltonian
-        assert np.allclose(extended_quantum_hamiltonian, extended_canonical_hamiltonian), \
-        "The matrix expression for the Hamiltonian in the ladder operators basis must be the same as the canonical Hamiltonian matrix."
+            # Proceed with the second quantization: Express the quantum Hamiltonian in the ladder operators basis.
+            I = np.eye(len(extended_canonical_hamiltonian)//2)
+            G = (1 / np.sqrt(2)) * np.block([[I, I], [-1j * I, 1j * I]])
+
+            extended_quantum_hamiltonian = np.conj(G.T) @ extended_canonical_hamiltonian @ G
+
+            # Verify the resulting Hamiltonian in the ladder operators basis is equal to the canonical Hamiltonian
+            assert np.allclose(extended_quantum_hamiltonian, extended_canonical_hamiltonian), \
+            "The matrix expression for the Hamiltonian in the ladder operators basis must be the same as the canonical Hamiltonian matrix."
+        else:
+            # All extended modes are zero-frequency (free/frozen variables).
+            # No symplectic diagonalization or second quantization needed.
+            T = np.eye(extended_dimension) if extended_dimension > 0 else np.empty((0, 0))
+            G = np.eye(extended_dimension) if extended_dimension > 0 else np.empty((0, 0))
+            extended_quantum_hamiltonian = extended_quadratic_hamiltonian
 
         if self.debug:
             print(f"Extended Quantum H shape: {extended_quantum_hamiltonian.shape}")

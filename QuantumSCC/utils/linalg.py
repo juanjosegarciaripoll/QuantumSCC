@@ -618,12 +618,14 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
     assert 2 * len(imag_eigval) + len(zero_eigval) == len(M_eigval), \
         "The input matrix must have only zero or pure imaginary eigenvalues by conjugate pairs"
     
-    # Define the symplectic matrix J with the correct dimensions
-    J = np.zeros((2 * len(imag_eigval) + len(zero_eigval), 2 * len(imag_eigval) + len(zero_eigval)))
-    I = np.eye(len(imag_eigval))
-    
-    J[:len(imag_eigval), len(imag_eigval):2 * len(imag_eigval)] = I
-    J[len(imag_eigval):2 * len(imag_eigval), :len(imag_eigval)] = -I 
+    # Define the physical symplectic matrix J = [[0, I_nf], [-I_nf, 0]].
+    # Using J_phys (not J_code) ensures correct normalization for circuits
+    # with zero-energy modes where oscillator eigenvectors span both blocks.
+    n = M.shape[0]
+    nf = no_flux_variables
+    J = np.zeros((n, n))
+    J[:nf, nf:2*nf] = np.eye(nf)
+    J[nf:2*nf, :nf] = -np.eye(nf)
     
     # Eigenvectors normalization under the symplectic inner product
     normal_imag_eigvec = np.empty((M.shape[0], 0))
@@ -661,21 +663,47 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
             normal_imag_eigvec[:,i] = 1j * normal_imag_eigvec[:,i]
 
     # Construct the basis change matrix T that brings M to eigval*J
-    T_plus = np.empty((2*len(imag_eigval) + len(zero_eigval), 0))
-    T_minus = np.empty((2*len(imag_eigval) + len(zero_eigval), 0))
-    T = np.empty((2*len(imag_eigval) + len(zero_eigval), 0))
+    T_plus = np.empty((n, 0))
+    T_minus = np.empty((n, 0))
 
     for i in range(len(imag_eigval)):
-        sigma = 1j * np.sign((imag_eigvec[:,i].T @ J @ np.conj(imag_eigvec[:,i]))/1j)
-
         T_plus = np.hstack((T_plus, np.sqrt(2) * (normal_imag_eigvec[:,i].real).reshape(-1,1)))
+        T_minus = np.hstack((T_minus, np.sqrt(2) * (normal_imag_eigvec[:,i].imag).reshape(-1,1)))
 
-        #T_minus = np.hstack((T_minus, np.sqrt(2)*((sigma * (-1) * np.conjugate(normal_imag_eigvec[:,i])).real).reshape(-1,1)))
-        T_minus = np.hstack((T_minus, np.sqrt(2)*((normal_imag_eigvec[:,i]).imag).reshape(-1,1)))
+    # Handle zero eigenvectors: classify as flux-like or charge-like
+    # and form symplectic pairs under J_phys.
+    n_zero = len(zero_eigval)
+    if n_zero > 0:
+        # Recover H from M = JH: H = J^{-1} M = -J M (since J^{-1} = -J)
+        H_recovered = (-J @ M).real
+        H_recovered = 0.5 * (H_recovered + H_recovered.T)
 
-    T = np.hstack((T, T_plus))
-    T = np.hstack((T, T_minus))
-    T = np.hstack((T, zero_eigvec))
+        H_ff = H_recovered[:nf, :nf]
+        H_cc = H_recovered[nf:, nf:]
+
+        # Find null spaces of flux and charge blocks (symmetric PSD)
+        eigval_ff, eigvec_ff = np.linalg.eigh(H_ff)
+        eigval_cc, eigvec_cc = np.linalg.eigh(H_cc)
+
+        null_ff = eigvec_ff[:, np.abs(eigval_ff) < tol]
+        null_cc = eigvec_cc[:, np.abs(eigval_cc) < tol]
+
+        assert null_ff.shape[1] == null_cc.shape[1], \
+            "Unbalanced zero modes: flux and charge null spaces have different dimensions"
+
+        # Embed in full space: flux vectors in [v_f, 0], charge vectors in [0, v_c]
+        zero_flux_vecs = np.vstack([null_ff, np.zeros((nf, null_ff.shape[1]))])
+        zero_charge_vecs = np.vstack([np.zeros((nf, null_cc.shape[1])), null_cc])
+
+        # Normalize symplectic pairing: v_f^T J v_c = 1 for each pair
+        for k in range(null_ff.shape[1]):
+            beta = zero_flux_vecs[:, k] @ J @ zero_charge_vecs[:, k]
+            zero_charge_vecs[:, k] /= beta
+
+        # Assemble T = [osc_flux | zero_flux | osc_charge | zero_charge]
+        T = np.hstack((T_plus, zero_flux_vecs, T_minus, zero_charge_vecs))
+    else:
+        T = np.hstack((T_plus, T_minus))
 
     # Verify that the matrix T satisies the conditions it must satisfy
     assert T.shape[0] == M.shape[0], "There is an error in the construction of the normal form transfromation matrix T. \

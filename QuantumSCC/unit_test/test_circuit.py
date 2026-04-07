@@ -562,6 +562,48 @@ class TestParallelQPSScaling(unittest.TestCase):
         quant = Quantization(topo, geom)
         self.assertAlmostEqual(quant.quadratic_hamiltonian[0, 0], 2.0, places=10)
 
+    def test_parallel_qps_vectors_nonzero(self):
+        """N parallel QPS on same nodes → all vector_QPS columns are non-zero.
+
+        Doubly-discrete gauge fix: gauge charge differences have integer spectra,
+        cos(2π·integer) = 1, so all QPS couple to the same dynamical charge.
+        """
+        for n in (2, 3, 4):
+            qps  = [PhaseSlip(float(i + 1), 'GHz') for i in range(n)]
+            inds = [Inductor(1.0, 'GHz') for _ in range(n)]
+            edges = [(0, 1, q) for q in qps] + [(0, 1, l) for l in inds]
+            circ = Circuit(edges)
+            for col in range(n):
+                self.assertFalse(np.allclose(circ.vector_QPS[:, col], 0),
+                                 msg=f"N={n}: QPS {col} has zero vector")
+
+    def test_parallel_qps_vectors_equal(self):
+        """N parallel QPS on same nodes → all vector_QPS columns are identical."""
+        for n in (2, 3, 4):
+            qps  = [PhaseSlip(float(i + 1), 'GHz') for i in range(n)]
+            inds = [Inductor(1.0, 'GHz') for _ in range(n)]
+            edges = [(0, 1, q) for q in qps] + [(0, 1, l) for l in inds]
+            circ = Circuit(edges)
+            for col in range(1, n):
+                np.testing.assert_allclose(
+                    circ.vector_QPS[:, col], circ.vector_QPS[:, 0],
+                    atol=1e-12,
+                    err_msg=f"N={n}: QPS {col} vector differs from QPS 0")
+
+    def test_parallel_qps_effective_inductance(self):
+        """N parallel QPS+Ind: H_quad non-zero diagonal = 2·Σ E_Li."""
+        E_L = [1.0, 2.0, 0.5]
+        for n in (2, 3):
+            qps  = [PhaseSlip(1.0, 'GHz') for _ in range(n)]
+            inds = [Inductor(E_L[i], 'GHz') for i in range(n)]
+            edges = [(0, 1, q) for q in qps] + [(0, 1, l) for l in inds]
+            circ = Circuit(edges)
+            diag = np.diag(circ.quadratic_hamiltonian)
+            nonzero = diag[np.abs(diag) > 1e-10]
+            expected = 2.0 * sum(E_L[:n])
+            self.assertAlmostEqual(nonzero[0], expected, places=10,
+                                   msg=f"N={n}: expected 2·Σ E_L = {expected}")
+
 
 # ── 5. QPS regression tests ───────────────────────────────────────────────────
 
@@ -624,6 +666,55 @@ class TestQPSRegressions(unittest.TestCase):
                      (2, 0, _J()), (2, 0, _C())])
         self.assertFalse(np.allclose(c.vector_JJ, 0))
         self.assertEqual(c.topo.no_reduced_compact_flux, 0)
+
+
+class TestDualmonCircuits(unittest.TestCase):
+    """Dualmon circuits from Le et al. (arXiv:1904.01843)."""
+
+    def test_dualmon_bare_constructs(self):
+        """Bare dualmon (JJ + QPS) constructs with zero quadratic H."""
+        c = Circuit([(0, 1, _J()), (0, 1, _P())])
+        self.assertEqual(c.no_final_compact_flux, 0)
+        self.assertEqual(c.no_final_compact_charge, 0)
+        self.assertTrue(np.allclose(c.quadratic_hamiltonian, 0))
+
+    def test_dualmon_gate_constructs(self):
+        """Dualmon + gate capacitor (JJ + QPS + C) constructs."""
+        c = Circuit([(0, 1, _J()), (0, 1, _P()), (0, 1, _C())])
+        self.assertEqual(c.no_final_compact_flux, 0)
+        self.assertEqual(c.no_final_compact_charge, 0)
+
+    def test_dualmon_full_constructs(self):
+        """Full dualmon (JJ+C on one node, L series, QPS on other) constructs."""
+        c = Circuit([(1, 0, _J()), (1, 0, _C()), (1, 2, _L()), (2, 0, _P())])
+        self.assertEqual(c.no_final_compact_flux, 0)
+        self.assertEqual(c.no_final_compact_charge, 0)
+        self.assertEqual(c.no_independent_variables, 4)
+
+    def test_dualmon_full_has_one_oscillator(self):
+        """Full dualmon has one oscillator mode and one zero-frequency mode."""
+        c = Circuit([(1, 0, _J()), (1, 0, _C()), (1, 2, _L()), (2, 0, _P())])
+        H = c.FS_quadratic_hamiltonian_phiq.real
+        diag = np.diag(H)
+        # One nonzero pair (oscillator) and one zero pair (frozen mode)
+        ne = H.shape[0] // 2
+        nonzero_flux = np.count_nonzero(np.abs(diag[:ne]) > 1e-10)
+        nonzero_charge = np.count_nonzero(np.abs(diag[ne:]) > 1e-10)
+        self.assertEqual(nonzero_flux, 1)
+        self.assertEqual(nonzero_charge, 1)
+
+    def test_dualmon_full_jj_qps_vectors_nonzero(self):
+        """Full dualmon JJ and QPS coupling vectors are nonzero."""
+        c = Circuit([(1, 0, _J()), (1, 0, _C()), (1, 2, _L()), (2, 0, _P())])
+        self.assertFalse(np.allclose(c.final_vector_JJ_phiq, 0))
+        self.assertFalse(np.allclose(c.final_vector_QPS_phiq, 0))
+
+    def test_dualmon_full_with_extra_elements(self):
+        """Dualmon full with extra L and C (conftest version) constructs."""
+        c = Circuit([(1, 0, _J()), (1, 0, _C()), (1, 2, _L()),
+                     (2, 0, _P()), (2, 0, _L()), (1, 0, _C())])
+        self.assertEqual(c.no_final_compact_flux, 0)
+        self.assertEqual(c.no_final_compact_charge, 1)
 
 
 if __name__ == '__main__':

@@ -538,10 +538,6 @@ COMPLEX_CIRCUITS = [
     ids=[c[0] for c in COMPLEX_CIRCUITS])
 def test_complex_invariants(name, edges):
     """Complex JJ/QPS topologies: all structural invariants hold."""
-    if name in ("LC_QPS_coupled", "2QPS_parallel", "3QPS_parallel"):
-        # Zero-energy extended modes (Ind without Cap) create a Jordan block
-        # in symplectic_transformation (defective matrix).  Known limitation.
-        pytest.xfail("Jordan block from zero-energy mode")
     circ = Circuit(edges)
     assert_invariants(circ)
 
@@ -551,6 +547,51 @@ def test_complex_invariants(name, edges):
     for i in range(n_ext):
         assert H_ext[i, i] > 0, f"{name}: mode {i} has ω={H_ext[i, i]}"
         assert np.isfinite(H_ext[i, i]), f"{name}: mode {i} is not finite"
+
+
+# ── GROUP J.2: Parallel QPS duality — doubly-discrete gauge fix ──────────────
+
+@pytest.mark.parametrize("n_qps", [2, 3])
+def test_parallel_qps_duality(n_qps):
+    """N parallel QPS: all vectors identical, H_quad = 2·Σ E_Li, dual JJ vectors also identical."""
+    E_P = [5, 3, 7][:n_qps]
+    E_L = [1, 2, 0.5][:n_qps]
+
+    # QPS circuit
+    qps_edges = ([(0, 1, _P(E_P[i])) for i in range(n_qps)]
+                 + [(0, 1, _L(E_L[i])) for i in range(n_qps)])
+    circ_qps = Circuit(qps_edges)
+
+    # All QPS vectors non-zero and identical
+    for col in range(n_qps):
+        assert not np.allclose(circ_qps.vector_QPS[:, col], 0), \
+            f"QPS {col} has zero coupling vector"
+    for col in range(1, n_qps):
+        np.testing.assert_allclose(
+            circ_qps.vector_QPS[:, col], circ_qps.vector_QPS[:, 0],
+            atol=1e-12, err_msg=f"QPS {col} vector differs from QPS 0")
+
+    # Effective inductance: H_quad non-zero diagonal = 2·Σ E_Li
+    diag = np.diag(circ_qps.quadratic_hamiltonian)
+    nonzero = diag[np.abs(diag) > 1e-10]
+    np.testing.assert_allclose(nonzero[0], 2.0 * sum(E_L), atol=1e-10,
+                               err_msg=f"Expected 2·Σ E_L = {2*sum(E_L)}")
+
+    # Dual JJ circuit: all JJ vectors should also be identical
+    jj_edges = ([(0, 1, _J(E_P[i])) for i in range(n_qps)]
+                + [(0, 1, _C(E_L[i])) for i in range(n_qps)])
+    circ_jj = Circuit(jj_edges)
+    for col in range(1, n_qps):
+        np.testing.assert_allclose(
+            circ_jj.vector_JJ[:, col], circ_jj.vector_JJ[:, 0],
+            atol=1e-12, err_msg=f"JJ {col} vector differs from JJ 0")
+
+    # Dual effective capacitance: 2·(1/Σ(1/E_Ci)) = harmonic combination
+    diag_jj = np.diag(circ_jj.quadratic_hamiltonian)
+    nonzero_jj = diag_jj[np.abs(diag_jj) > 1e-10]
+    E_C_eff = 1.0 / sum(1.0 / e for e in E_L)
+    np.testing.assert_allclose(nonzero_jj[0], 2.0 * E_C_eff, atol=1e-10,
+                               err_msg=f"Expected 2·E_C_eff = {2*E_C_eff}")
 
 
 # ============================================================================
