@@ -594,6 +594,35 @@ def test_parallel_qps_duality(n_qps):
                                err_msg=f"Expected 2·E_C_eff = {2*E_C_eff}")
 
 
+# ── GROUP J.3: SVD hidden gauge detection — bare triangles (nF > nQ) ─────────
+
+BARE_TRIANGLE_PARAMS = [
+    (5, 3, 1),
+    (10, 2, 0.5),
+    (1, 7, 3),
+]
+
+@pytest.mark.parametrize("E_J,E_P,E_C", BARE_TRIANGLE_PARAMS)
+def test_bare_triangle_invariants(E_J, E_P, E_C):
+    """JJ+QPS+Cap bare triangle: SVD gauge detection produces valid reduction."""
+    edges = [(0, 1, _J(E_J)), (1, 2, _P(E_P)), (0, 2, _C(E_C))]
+    circ = Circuit(edges)
+    assert_invariants(circ)
+
+    # After SVD gauge reduction: nF_final = nQ_final = 1 (one dynamical pair)
+    n_indep = circ.geom.no_independent_variables
+    assert n_indep == 2, f"Expected 2 independent variables, got {n_indep}"
+
+    # Compact flux is destroyed by SVD rotation (mixes compact + extended)
+    assert circ.geom.no_final_compact_flux == 0, \
+        "Compact flux should be zero after SVD mixing"
+
+    # H_quad is 2×2 with one non-zero diagonal entry (the capacitive energy)
+    H = circ.quadratic_hamiltonian
+    assert H.shape == (2, 2), f"H_quad shape {H.shape}, expected (2, 2)"
+    assert np.allclose(H, H.T), "H_quad not symmetric"
+
+
 # ============================================================================
 # GROUP K: Physical units — verify pF/nH give same result as GHz
 #          5 tests

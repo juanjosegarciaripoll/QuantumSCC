@@ -422,6 +422,78 @@ def omega_symplectic_transformation(
     nEF = no_extended_flux_variables
     nCC = no_compact_charge_variables
 
+    # ── Hidden gauge detection via T_QR rotation (QPS-JJ-reduction.pdf §2-4)
+    #
+    # When nF > nQ, there are flux gauge directions that are non-coordinate-
+    # aligned linear combinations (e.g., φ_CF - φ_EF), invisible to the
+    # all-zero-row scan above.
+    #
+    # Adrian (QPS-JJ-reduction.pdf p.3) defines the rotation:
+    #
+    #   T_QR = ( A          )     where A = Ω[φ_S, Q_R]
+    #          ( basis(A⊥)  )
+    #
+    # This splits Q_R into: Q̃_RS (paired with φ_S) and Q̃_RR (remainder).
+    # Analogously T_ΦR = [B; basis(B⊥)] for the flux sector.
+    # After applying T_QR and T_ΦR, gauge directions become coordinate-
+    # aligned (last rows of the rotated Ω are zero) and can be deleted.
+    # The remaining block D' = T_QR^T · D · T_ΦR^{-1} is then reduced
+    # by the standard Darboux algorithm.
+    #
+    # Implementation: we use SVD of Ω_FC as a numerically stable way to
+    # compute "basis(A⊥)". The SVD Ω_FC = U·Σ·V^T gives:
+    #   U[:, :rank]  = range(Ω_FC)   → dynamical flux directions
+    #   U[:, rank:]  = ker(Ω_FC^T)   → flux gauge directions ("basis(A⊥)")
+    # So U^T is exactly T_QR applied to the flux sector.
+    # The SVD is not prescribed by the paper — it is our numerical choice
+    # to implement the abstract "basis of A⊥" construction.
+    svd_rotation = None
+    svd_delete_hidden = []
+    nF_pre_svd = nF
+    nQ_pre_svd = nQ
+
+    if nF > nQ and nQ > 0:
+        Omega_FC = Omega_new[:nF, nF:]
+        rank_FC = np.linalg.matrix_rank(Omega_FC, tol=tol)
+        n_flux_gauge = nF - rank_FC
+
+        if n_flux_gauge > 0:
+            U, S, Vt = np.linalg.svd(Omega_FC, full_matrices=True)
+
+            # Reorder dynamical columns: purely-compact first, then mixed/extended.
+            # A dynamical direction j is compact iff U[nCF:, j] ≈ 0
+            # (lies entirely within the original compact flux subspace).
+            compact_dyn = [j for j in range(rank_FC)
+                           if np.all(np.abs(U[nCF:, j]) < tol)]
+            extended_dyn = [j for j in range(rank_FC)
+                            if not np.all(np.abs(U[nCF:, j]) < tol)]
+            gauge_cols = list(range(rank_FC, nF))
+            perm_cols = compact_dyn + extended_dyn + gauge_cols
+            U = U[:, perm_cols]
+
+            # Build T_QR rotation: R = block_diag(U^T, I_charge)
+            # U^T implements T_QR = [A; basis(A⊥)] for the flux sector.
+            R = np.eye(Omega_new.shape[0])
+            R[:nF, :nF] = U.T
+
+            Omega_new = R @ Omega_new @ R.T
+
+            # Last n_flux_gauge flux rows/cols are now zero — delete them
+            svd_delete_hidden = list(range(nF - n_flux_gauge, nF))
+            Omega_new = np.delete(Omega_new, svd_delete_hidden, axis=0)
+            Omega_new = np.delete(Omega_new, svd_delete_hidden, axis=1)
+
+            svd_rotation = R
+
+            # Update variable counts
+            new_nCF = len(compact_dyn)
+            nCF = new_nCF
+            nF = rank_FC
+            nEF = nF - nCF
+            no_compact_flux_variables = nCF
+            no_flux_variables = nF
+            no_extended_flux_variables = nEF
+
     # ── Deterministic charge pairing (QPS-JJ-reduction.pdf) ──────────────
     # With correctly constructed K (Eq. 42 integer kernel + [compact|extended]
     # ordering), the block structure of Omega = K^T · omega_2B · K gives:
@@ -540,9 +612,33 @@ def omega_symplectic_transformation(
         col_idx = list(range(nF)) + [nF + inv_charge_perm[k] for k in range(nQ)]
         inv_V = inv_V[:, col_idx]
 
-    # Restore gauge variable rows/cols
+    # ── Restore T_QR-rotated gauge variables ────────────────────────────
+    # inv_V is currently in the T_QR-reduced coordinate space.  We must:
+    #   (a) Re-insert rows/cols for the deleted gauge directions
+    #   (b) Compose with R^T to undo the T_QR rotation (R = block_diag(U^T, I))
+    # After this, inv_V is back in the zero-row-deleted coordinate space.
+    if svd_rotation is not None:
+        n_svd_dyn = inv_V.shape[0]
+        n_svd_gauges = len(svd_delete_hidden)
+
+        # (a) Insert gauge rows (at the bottom) and columns (at deleted positions)
+        inv_V = np.vstack((inv_V, np.zeros((n_svd_gauges, inv_V.shape[1]))))
+        for i, idx in enumerate(svd_delete_hidden):
+            inv_V = np.hstack((
+                inv_V[:, :idx],
+                np.zeros((inv_V.shape[0], 1)),
+                inv_V[:, idx:]
+            ))
+            inv_V[n_svd_dyn + i, idx] = 1
+
+        # (b) Compose with T_QR rotation: inv_V was in rotated coords,
+        # multiply on the right by R to transform columns back to unrotated.
+        # Derivation: V_total = R^T @ V_d ⟹ inv_V_total = inv_V_d @ R
+        inv_V = inv_V @ svd_rotation
+
+    # ── Restore zero-row gauge variable rows/cols ────────────────────────
     no_gauge_variables     = len(delete_index_list)
-    no_non_gauge_variables = Omega_new.shape[0]
+    no_non_gauge_variables = inv_V.shape[0]
 
     if no_gauge_variables > 0:
         inv_V = np.vstack((inv_V, np.zeros((no_gauge_variables, inv_V.shape[1]))))
