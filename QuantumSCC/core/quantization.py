@@ -255,8 +255,13 @@ class Quantization:
         # This happens when the extended sector contains variables without a conjugate
         # energy pair (e.g., flux with inductance but no capacitance on that node).
         # In this case symplectic diagonalization is not applicable.
+        #
+        # Use atol=1e-4 (not the default 1e-8) because a zero-frequency mode where
+        # H[charge,charge] ≈ machine-epsilon produces eigenvalues ±i·sqrt(E_L·ε) ≈ ±3e-8j,
+        # which exceeds atol=1e-8 and triggers a false "has oscillators" detection.
+        # Physical oscillator frequencies are O(1 GHz) >> 1e-4, so this threshold is safe.
         eigvals_dyn = np.linalg.eigvals(dynamical_matrix) if extended_dimension > 0 else np.array([])
-        has_oscillators = extended_dimension > 0 and not np.allclose(eigvals_dyn, 0)
+        has_oscillators = extended_dimension > 0 and not np.allclose(eigvals_dyn, 0, atol=1e-4)
 
         if has_oscillators:
             _, T = symplectic_transformation(dynamical_matrix, no_flux_variables=extended_quadratic_hamiltonian.shape[0]//2)
