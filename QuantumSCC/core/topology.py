@@ -248,29 +248,35 @@ class Topology:
         E_cut = Fcut[:, :no_two_island]
         D_cut = Fcut[:, no_two_island:]
 
-        # Count distinct QPS node pairs for compact charge cap.
+        # Count QPS per node-pair group for compact charge mode detection.
+        # For N QPS on the same node pair: max(1, N-1) compact charge modes.
+        #   N=1 → 1 compact mode (the single charge).
+        #   N≥2 → N-1 compact modes (the charge-difference directions).
+        # This follows from KCL: for N parallel QPS, 1 scalar constraint
+        # (sum of charges = const) leaves N-1 free charge differences, all compact.
         qps_start = self.no_JJ + self.no_Capacitors
-        qps_node_pairs = set()
+        qps_group_counts = {}
         for i in range(self.no_QPS):
             na, nb = self.elements[qps_start + i][0], self.elements[qps_start + i][1]
-            qps_node_pairs.add(frozenset([na, nb]))
-        no_qps_groups = len(qps_node_pairs)
+            pair = frozenset([na, nb])
+            qps_group_counts[pair] = qps_group_counts.get(pair, 0) + 1
+        no_qps_groups = len(qps_group_counts)
+        # Total expected compact charge modes across all groups
+        expected_compact_modes = sum(max(1, cnt - 1) for cnt in qps_group_counts.values())
 
         if no_one_island == 0 or no_qps_groups == 0:
             Kcut_compact = np.zeros((self.no_elements, 0))
         else:
             K_D_cut = integer_null_space(D_cut)
 
-            # Cap at number of distinct QPS node-pair groups.
-            # The D_cut kernel can be larger than the physical compact charge
-            # count when multiple QPS+Ind share the same nodes.  Each QPS
-            # node-pair group contributes at most 1 compact charge mode.
-            # Sort columns to prefer QPS-pure directions (zero Ind components)
-            # so the first columns are the best compact representatives.
-            if K_D_cut.shape[1] > no_qps_groups:
+            # Cap at the expected number of compact charge modes.
+            # Sort columns by "most Ind-zeros first": pure QPS-difference vectors
+            # (zero inductor component) score higher than QPS-Ind pair vectors,
+            # so the correct charge-difference modes are selected first.
+            if K_D_cut.shape[1] > expected_compact_modes:
                 ind_zeros = np.sum(np.abs(K_D_cut[self.no_QPS:, :]) < 1e-12, axis=0)
                 order = np.argsort(-ind_zeros)  # most Ind-zeros first
-                K_D_cut = K_D_cut[:, order[:no_qps_groups]]
+                K_D_cut = K_D_cut[:, order[:expected_compact_modes]]
 
             # Embed into full element space (pad with zeros for two-island columns)
             Kcut_compact = np.vstack((
