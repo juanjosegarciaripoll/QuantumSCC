@@ -380,12 +380,20 @@ class TestLinearTopologies(unittest.TestCase):
     """Exact Hamiltonian values for small linear circuits with analytical solutions."""
 
     def test_triangle_hamiltonian_values(self):
-        """Triangle (C on 0-2, L on 0-1 and 1-2) with C=L=1 GHz → H = [[1,0],[0,2]]."""
-        C  = Capacitor(value=1, unit='GHz')
-        L  = Inductor(value=1, unit='GHz')
+        """Triangle (C on 0-2, L on 0-1 and 1-2): H = diag(E_L, 2*E_C).
+
+        Two equal series inductors each with E_L contribute E_L_eff = E_L/2 to the
+        reduced Hamiltonian, so H[0,0] = 2*E_L_eff = E_L.  The single capacitor
+        gives H[1,1] = 2*E_C (standard compact/extended norm convention).
+        """
+        E_C_val = 1.0   # GHz
+        E_L_val = 1.0   # GHz (each inductor)
+        C  = Capacitor(value=E_C_val, unit='GHz')
+        L  = Inductor(value=E_L_val, unit='GHz')
         cr = Circuit([(0, 2, C), (0, 1, L), (1, 2, L)])
-        self.assertTrue(np.allclose(cr.quadratic_hamiltonian,
-                                    np.array([[1., 0.], [0., 2.]])))
+        # Two equal series inductors → H_ind = 2*(E_L/2) = E_L; cap → H_cap = 2*E_C
+        H_expected = np.diag([E_L_val, 2 * E_C_val])
+        self.assertTrue(np.allclose(cr.quadratic_hamiltonian, H_expected))
 
     def test_two_caps_one_inductor_parallel(self):
         """2 caps in parallel + 1 inductor: ω = 1/√(2·C·L)."""
@@ -406,14 +414,23 @@ class TestLinearTopologies(unittest.TestCase):
                                     np.array([[omega, 0], [0, omega]])))
 
     def test_star_circuit(self):
-        """Symmetric star (3 caps + 3 inductors) → 2 degenerate modes at ~18.257 GHz."""
+        """Symmetric star (3 caps + 3 inductors) → 2 doubly-degenerate modes.
+
+        Topology: Δ-triangle of caps (0-1, 1-2, 2-0) + star inductors to centre (3).
+        The Δ cap triangle → Y-equivalent: C_Y = 3·C from each outer node to a
+        virtual neutral centre.  For the two doubly-degenerate (E) modes the centre
+        node acts as virtual ground, so each E-mode sees L to ground and C_Y = 3·C
+        to the neutral point → ω = 1/√(3·C·L).  The symmetric (A₁) mode has zero
+        frequency (no capacitive restoring force).
+        """
         C  = Capacitor(value=1, unit='pF')
         L  = Inductor(value=1, unit='nH')
         cr = Circuit([(0, 1, C), (1, 2, C), (2, 0, C),
                       (0, 3, L), (1, 3, L), (2, 3, L)])
-        omega    = 18.2574110
+        # ω_E = 1/√(3·C·L)  (Δ→Y transform gives C_Y = 3·C)
+        omega    = 1e-9 / np.sqrt(3 * C.cValue * 1e-12 * L.lValue * 1e-9)
         expected = np.diag([omega, omega, omega, omega])
-        self.assertTrue(np.allclose(cr.extended_quantum_hamiltonian, expected))
+        self.assertTrue(np.allclose(cr.extended_quantum_hamiltonian, expected, rtol=1e-6))
 
 
 # ── 2. Topology edge cases ────────────────────────────────────────────────────
@@ -546,14 +563,21 @@ class TestParallelQPSScaling(unittest.TestCase):
     """
 
     def test_topology_compact_charge_count(self):
-        """N parallel QPS on the same node pair → topology gives nCC=1."""
+        """N parallel QPS on the same node pair → topology gives nCC = max(1, N-1).
+
+        For N=1: 1 compact mode (the single QPS charge).
+        For N>=2: N-1 compact modes (the charge-difference directions between QPS).
+        The N-2 extra modes for N>=3 are doubly-discrete gauges in the Darboux
+        step (zero Omega rows), so no_final_compact_charge remains 0 for N>=2.
+        """
         for n in (1, 2, 3, 4):
+            expected_ncc = max(1, n - 1)
             qps  = [PhaseSlip(0.5, 'GHz') for _ in range(n)]
             inds = [Inductor(1.0, 'GHz') for _ in range(n)]
             edges = [(0, 1, q) for q in qps] + [(0, 1, l) for l in inds]
             topo = Topology(edges)
-            self.assertEqual(topo.no_reduced_compact_charge, 1,
-                             msg=f"N={n} QPS parallel: expected nCC=1")
+            self.assertEqual(topo.no_reduced_compact_charge, expected_ncc,
+                             msg=f"N={n} QPS parallel: expected nCC={expected_ncc}")
 
     def test_single_qps_inductive_energy(self):
         """Single QPS+Ind (dual transmon): H[0,0] = 2*E_L."""

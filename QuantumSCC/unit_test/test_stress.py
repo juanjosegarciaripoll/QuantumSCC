@@ -562,6 +562,12 @@ def test_parallel_qps_duality(n_qps):
                  + [(0, 1, _L(E_L[i])) for i in range(n_qps)])
     circ_qps = Circuit(qps_edges)
 
+    # Compact charge mode count: max(1, N-1) per group (charge-difference modes)
+    expected_nCC = max(1, n_qps - 1)
+    assert circ_qps.no_reduced_compact_charge == expected_nCC, (
+        f"N={n_qps} parallel QPS: expected {expected_nCC} compact charge mode(s), "
+        f"got {circ_qps.no_reduced_compact_charge}")
+
     # All QPS vectors non-zero and identical
     for col in range(n_qps):
         assert not np.allclose(circ_qps.vector_QPS[:, col], 0), \
