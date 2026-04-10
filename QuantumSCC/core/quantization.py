@@ -56,6 +56,8 @@ class Quantization:
                 capacitor = elem[2]
                 quadratic_energy[i + self.topo.no_elements, i + self.topo.no_elements] = 2 * capacitor.energy()
 
+            ## add Junction for consistency
+            
             elif isinstance(elem[2], PhaseSlip):
                 # QPS branch: only nonlinear cos(q) term, no quadratic energy.
                 # Any associated inductance is a separate Inductor element.
@@ -373,7 +375,7 @@ class Quantization:
                 final_vector_JJ_an, final_vector_QPS_an)
 
 
-    def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9):
+    def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9, verbose: bool = True):
         """
         Print the Hamiltonian twice: first symbolically (E_C, E_L, E_J, E_P as symbols),
         then numerically (current Hamiltonian_expression format).
@@ -444,26 +446,57 @@ class Quantization:
         print(sep)
         print('Symbolic Hamiltonian:')
 
-        # Use LaTeX rendering in Jupyter, fall back to pretty-print in terminal
+        # Use LaTeX rendering in Jupyter, fall back to pretty-print in terminal.
+        # get_ipython() exists only inside an active IPython kernel (Jupyter);
+        # in a plain terminal script it raises NameError.
+        _in_jupyter = False
         try:
+            shell = get_ipython()
+            _in_jupyter = shell is not None and hasattr(shell, 'kernel')
+        except NameError:
+            pass
+
+        if _in_jupyter:
             from IPython.display import display, Math
             display(Math(r'H/\hbar = ' + sp.latex(H_expr)))
-        except (ImportError, NameError):
-            print(f'H/ℏ = {sp.pretty(H_expr, use_unicode=True)}')
+        else:
+            _sup = {'**2': '²', '**3': '³', '**4': '⁴', '**5': '⁵'}
+            s = str(H_expr)
+            for k, v in _sup.items():
+                s = s.replace(k, v)
+            s = s.replace('*', '·')
+            print(f'H/ℏ = {s}')
 
-        print()
-        print('Parameter values (GHz):')
-        for sym, val in sym_vals.items():
-            print(f'  {sym} = {val:.{precision}f}')
-        for sym, val in J_syms:
-            print(f'  {sym} = {val:.{precision}f}')
-        for sym, val in P_syms:
-            print(f'  {sym} = {val:.{precision}f}')
+        if verbose:
+            # ── Variable legend ───────────────────────────────────────────────
+            print()
+            print('Canonical variables:')
+            if nCF > 0:
+                print(f'  φ_c{{k}}  compact flux      (JJ sector, periodic S¹)  — conjugate: n_c')
+            if nCC > 0:
+                print(f'  ψ_c{{k}}  compact flux      (QPS sector, conjugate to q_c) — energy: 2·E_L·ψ_c²')
+            if nEF > 0:
+                print(f'  φ_e{{k}}  extended flux     (oscillator modes, ℝ)')
+            if nCF > 0:
+                print(f'  n_c{{k}}  compact charge    (integer spectrum, conjugate to φ_c)')
+            if nCC > 0:
+                print(f'  q_c{{k}}  compact charge    (QPS sector, integer spectrum S¹)')
+            if nEF > 0:
+                print(f'  n_e{{k}}  extended charge   (oscillator modes, ℝ)')
 
-        # ── Print numerical ───────────────────────────────────────────────────
-        print()
-        print('Numerical Hamiltonian:')
-        self.Hamiltonian_expression(precision=precision)
+            print()
+            print('Parameter values (GHz):')
+            for sym, val in sym_vals.items():
+                print(f'  {sym} = {val:.{precision}f}')
+            for sym, val in J_syms:
+                print(f'  {sym} = {val:.{precision}f}')
+            for sym, val in P_syms:
+                print(f'  {sym} = {val:.{precision}f}')
+
+            # ── Print numerical ───────────────────────────────────────────────
+            print()
+            print('Numerical Hamiltonian:')
+            self.Hamiltonian_expression(precision=precision)
 
         return H_expr
 
@@ -488,9 +521,11 @@ class Quantization:
         print('----------------------------------------------------------------------')
     
 
-    def Hamiltonian_expression(self, precision: int = 3, tol: float = 1e-14):
+    def Hamiltonian_expression(self, precision: int = 3, tol: float = 1e-14, verbose: bool = True):
         """
-        Print out the Hamiltonian. 
+        Print the numerical Hamiltonian.
+        verbose=True (default): full output with coupling vectors, variable legend, operator explanations.
+        verbose=False: only the H/ℏ expression line.
         """
 
         # Define the matrices
@@ -556,50 +591,50 @@ class Quantization:
 
         print('')
 
-        np.set_printoptions(precision=precision)
-        print(f'JJ coupling vectors v (flux space):')
-        for i in range(vector_JJ.shape[1]):
-            print(f'v_{i+1} = {(vector_JJ[:, i].real).T}')
+        if verbose:
+            np.set_printoptions(precision=precision)
+            print(f'JJ coupling vectors v (flux space):')
+            for i in range(vector_JJ.shape[1]):
+                print(f'v_{i+1} = {(vector_JJ[:, i].real).T}')
 
-        if no_QPS > 0:
+            if no_QPS > 0:
+                print('')
+                print(f'QPS coupling vectors u (charge space):')
+                for i in range(vector_QPS.shape[1]):
+                    print(f'u_{i+1} = {(vector_QPS[:, i].real).T}')
+
             print('')
-            print(f'QPS coupling vectors u (charge space):')
-            for i in range(vector_QPS.shape[1]):
-                print(f'u_{i+1} = {(vector_QPS[:, i].real).T}')
 
-        print('')
-
-        print(f'Flux-charge variable vector \u03BE\u03C6:')
-        print(f'\u03BE\u03C6\u1D40 = (', end=" ")
-        for i in range(2*no_flux_variables):
-            if i < no_compact_fluxes:
-                print(f'\u03D5_c{i+1}', end=" ")
-            elif no_compact_fluxes <= i < no_flux_variables:
-                print(f' \u03D5_e{i-no_compact_fluxes+1}', end=" ")
-            elif no_flux_variables <= i < no_flux_variables + no_compact_fluxes:
-                print(f' n_c{i-no_flux_variables+1}', end=" ")
-            elif no_flux_variables + no_compact_fluxes <= i <= 2*no_flux_variables-1:
-                print(f' n_e{i-no_compact_fluxes-no_flux_variables+1}', end=" ")
-        print(f')')
-
-        if no_QPS > 0:
-            print(f'')
-            print(f'Charge variable vector \u03BEq (QPS sector):')
-            print(f'\u03BEq\u1D40 = (', end=" ")
-            for i in range(no_compact_charges):
-                print(f' q_c{i+1}', end=" ")
-            for i in range(no_flux_variables - no_compact_fluxes):
-                print(f' \u03C6_e{i+1}', end=" ")
+            print(f'Flux-charge variable vector \u03BE\u03C6:')
+            print(f'\u03BE\u03C6\u1D40 = (', end=" ")
+            for i in range(2*no_flux_variables):
+                if i < no_compact_fluxes:
+                    print(f'\u03D5_c{i+1}', end=" ")
+                elif no_compact_fluxes <= i < no_flux_variables:
+                    print(f' \u03D5_e{i-no_compact_fluxes+1}', end=" ")
+                elif no_flux_variables <= i < no_flux_variables + no_compact_fluxes:
+                    print(f' n_c{i-no_flux_variables+1}', end=" ")
+                elif no_flux_variables + no_compact_fluxes <= i <= 2*no_flux_variables-1:
+                    print(f' n_e{i-no_compact_fluxes-no_flux_variables+1}', end=" ")
             print(f')')
 
-        print(f'')
+            if no_QPS > 0:
+                print(f'')
+                print(f'Charge variable vector \u03BEq (QPS sector):')
+                print(f'\u03BEq\u1D40 = (', end=" ")
+                for i in range(no_compact_charges):
+                    print(f' q_c{i+1}', end=" ")
+                for i in range(no_flux_variables - no_compact_fluxes):
+                    print(f' \u03C6_e{i+1}', end=" ")
+                print(f')')
 
-        print(f'Operator subscripts explanation:')
-        print(f' - Subindex e: extended subspace (oscillator modes)')
-        print(f' - Subindex c: compact subspace (JJ flux / QPS charge)')
-        print('')
+            print(f'')
+            print(f'Operator subscripts explanation:')
+            print(f' - Subindex e: extended subspace (oscillator modes)')
+            print(f' - Subindex c: compact subspace (JJ flux / QPS charge)')
+            print('')
+            print(f'Relation between number-phase operators and flux-charge operators:')
+            print(f' - n = Q/(2e)')
+            print(f' - \u03D5 = 2\u03C0 \u03C6/(\u03C6_0)')
 
-        print(f'Relation between number-phase operators and flux-charge operators:')
-        print(f' - n = Q/(2e)')
-        print(f' - \u03D5 = 2\u03C0 \u03C6/(\u03C6_0)')
         print('----------------------------------------------------------------------')

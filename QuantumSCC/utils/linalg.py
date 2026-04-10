@@ -563,8 +563,8 @@ def omega_symplectic_transformation(
 
     # Block 1: compact flux variables — set unit vector and read conjugate from Omega row
     for i in range(nCF):
-        inv_V[i, i] = 1
-        inv_V[i + nCF, :] = Omega_perm[i, :]
+        inv_V[i, i] = 1 # canonical position q
+        inv_V[i + nCF, :] = Omega_perm[i, :] # canonical momentum p
 
     # Block 2: extended flux variables — read their Omega rows into the charge block
     for i in range(nEF):

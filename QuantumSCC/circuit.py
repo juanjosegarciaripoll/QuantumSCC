@@ -110,13 +110,23 @@ class Circuit:
         return self.quant.total_hamiltonian_quantization()
 
     def diagonal_harmonic_Hamiltonian_expression(self, precision: int = 3):
-        """Delegates printing to the Quantization module."""
+        """[Terminal] Print harmonic frequencies in diagonal normal-mode basis."""
         self.quant.diagonal_harmonic_Hamiltonian_expression(precision)
 
-    def Hamiltonian_expression(self, precision: int = 3, tol: float = 1e-14):
-        """Delegates printing to the Quantization module."""
-        self.quant.Hamiltonian_expression(precision, tol)
+    def Hamiltonian_expression(self, precision: int = 3, tol: float = 1e-14, verbose: bool = True):
+        """[Terminal] Print the numerical Hamiltonian.
+        verbose=True (default): full output with coupling vectors, variable legend, operator explanations.
+        verbose=False: only the H/ℏ expression line.
+        Works in both terminal scripts and Jupyter notebooks."""
+        self.quant.Hamiltonian_expression(precision, tol, verbose)
 
-    def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9):
-        """Print symbolic Hamiltonian (E_C, E_L, E_J, E_P) followed by numerical."""
-        self.quant.symbolic_hamiltonian_expression(precision, tol)
+    def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9, verbose: bool = True):
+        """[Terminal + Jupyter] Print the Hamiltonian with symbolic energy parameters
+        (E_C, E_L, E_J, E_P).
+        verbose=True (default): adds variable legend, parameter values, and full numerical Hamiltonian.
+        verbose=False: only the H/ℏ = ... symbolic expression line.
+
+        - In Jupyter: renders LaTeX via IPython.display.Math.
+        - In terminal: single-line Unicode format.
+        """
+        self.quant.symbolic_hamiltonian_expression(precision, tol, verbose)
