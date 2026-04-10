@@ -122,6 +122,22 @@ class Topology:
 
         self.no_elements = len(self.elements)
 
+        # Ordering invariant: internal list must be [JJ* | Cap* | QPS* | Ind*].
+        # Verified here so any future refactor of the construction loops trips
+        # immediately on any circuit construction (all 379+ tests exercise this).
+        _jj_end  = self.no_JJ
+        _cap_end = _jj_end  + self.no_Capacitors
+        _qps_end = _cap_end + self.no_QPS
+        _ind_end = _qps_end + self.no_Inductors
+        assert all(isinstance(e[2], Junction)  for e in self.elements[:_jj_end]),  \
+            "BUG: JJ block is not at the start of self.elements"
+        assert all(isinstance(e[2], Capacitor) for e in self.elements[_jj_end:_cap_end]), \
+            "BUG: Capacitor block is out of order in self.elements"
+        assert all(isinstance(e[2], PhaseSlip) for e in self.elements[_cap_end:_qps_end]), \
+            "BUG: QPS block is out of order in self.elements"
+        assert all(isinstance(e[2], Inductor)  for e in self.elements[_qps_end:_ind_end]), \
+            "BUG: Inductor block is not at the end of self.elements"
+
         if self.debug:
             print(f"Element Counts -> JJ: {self.no_JJ}, Caps: {self.no_Capacitors}, "
                   f"QPS: {self.no_QPS}, Inds: {self.no_Inductors}, Total: {self.no_elements}")
