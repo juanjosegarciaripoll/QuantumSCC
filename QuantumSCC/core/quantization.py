@@ -56,6 +56,13 @@ class Quantization:
                 capacitor = elem[2]
                 quadratic_energy[i + self.topo.no_elements, i + self.topo.no_elements] = 2 * capacitor.energy()
 
+            ## add Junction for consistency
+            
+            elif isinstance(elem[2], PhaseSlip):
+                # QPS branch: only nonlinear cos(q) term, no quadratic energy.
+                # Any associated inductance is a separate Inductor element.
+                pass
+
         # Calculate the quadratic energy function matrix after Kirchhoff
         quadratic_energy_after_Kirchhoff = self.topo.K.T @ quadratic_energy @ self.topo.K
 
@@ -99,18 +106,45 @@ class Quantization:
         # Calculate the QPS vector under the change of variables
         vector_QPS = self.geom.V.T @ self.topo.K.T @ vector_QPS
 
+        # ── Doubly-discrete gauge redistribution for parallel QPS ──────
+        # When N QPS share the same node pair, the N-1 charge differences
+        # are gauge (zero rows in Ω) with integer spectra (compact S¹).
+        # Since cos(2π · integer) = 1, all QPS on the same pair couple
+        # identically to the single dynamical charge Q.
+        # Ref: arXiv:2412.06880 §III (k/j/s-mode decomposition)
+        no_indep = self.geom.no_independent_variables
+        if vector_QPS.shape[1] > 1:
+            qps_indices = [i for i, elem in enumerate(self.topo.elements)
+                           if isinstance(elem[2], PhaseSlip)]
+            pair_groups = {}
+            for col_idx, elem_idx in enumerate(qps_indices):
+                pair = frozenset([self.topo.elements[elem_idx][0],
+                                  self.topo.elements[elem_idx][1]])
+                pair_groups.setdefault(pair, []).append(col_idx)
+
+            for pair, cols in pair_groups.items():
+                if len(cols) <= 1:
+                    continue
+                # Find representative with non-zero dynamical projection
+                rep_vec = None
+                for c in cols:
+                    if not np.allclose(vector_QPS[:no_indep, c], 0):
+                        rep_vec = vector_QPS[:, c].copy()
+                        break
+                if rep_vec is not None:
+                    for c in cols:
+                        if np.allclose(vector_QPS[:no_indep, c], 0):
+                            vector_QPS[:, c] = rep_vec
+
         # Validate the QPS vector.
-        # The only genuine error is when the QPS charge has ZERO component in
-        # the dynamical sector (positions 0..no_indep-1): the QPS is then fully
-        # decoupled from all dynamics and its cos(q) term has no physical effect.
+        # When kcut_suppressed=True (capacitor in parallel with QPS), the QPS charge
+        # becomes a gauge variable (constant of motion, analogous to external flux in
+        # fluxonium).  Its cos(q) evaluates at the fixed gauge charge value — a constant
+        # energy offset with no dynamical effect.  Zero dynamical projection is expected.
         #
-        # Non-zero components in the non-dynamical sector (positions no_indep:)
-        # are physically legitimate: Kirchhoff's current law in multi-node rings
-        # and coupled topologies naturally projects the QPS charge onto conserved
-        # charge combinations (null vectors of Omega). These components label the
-        # charge sector (analogous to external flux in fluxonium) and are correctly
-        # discarded by the truncation to no_independent_variables below.
-        if vector_QPS.shape[1] > 0:
+        # For other topologies, zero dynamical projection means the QPS is genuinely
+        # decoupled from the dynamics, which is an error.
+        if vector_QPS.shape[1] > 0 and not has_charge_gauge:
             no_indep = self.geom.no_independent_variables
             if np.allclose(vector_QPS[:no_indep, :], 0):
                 raise ValueError(
@@ -155,10 +189,14 @@ class Quantization:
                 quadratic_hamiltonian = TEF_11 - TEF_12 @ TEF_22_inv @ TEF_21
 
 
-        # Verify the resulting quadratic Hamiltonian is block diagonal and symmetric
-        assert np.allclose(quadratic_hamiltonian[quadratic_hamiltonian.shape[0]:, :quadratic_hamiltonian.shape[1]], 0) and \
-            np.allclose(quadratic_hamiltonian[:quadratic_hamiltonian.shape[0], quadratic_hamiltonian.shape[1]:], 0), \
-            'The classical Hamiltonian matrix must be block diagonal. There could be an error in the construction of the basis change matrix V'
+        # Verify the resulting quadratic Hamiltonian is block diagonal and symmetric.
+        # H = [[H_φφ, H_φq], [H_qφ, H_qq]] where n = no_indep // 2.
+        # Block-diagonal means H_φq = H_qφ = 0.
+        n_half = quadratic_hamiltonian.shape[0] // 2
+        if n_half > 0 and quadratic_hamiltonian.shape[0] % 2 == 0:
+            assert np.allclose(quadratic_hamiltonian[:n_half, n_half:], 0) and \
+                np.allclose(quadratic_hamiltonian[n_half:, :n_half], 0), \
+                'The classical Hamiltonian matrix must be block diagonal. There could be an error in the construction of the basis change matrix V'
         
         assert np.allclose(quadratic_hamiltonian.T, quadratic_hamiltonian), "Something goes wrong. Quadratic Hamiltonian matrix must be symmetric."
 
@@ -210,20 +248,40 @@ class Quantization:
         # Get the quantum canonical Hamiltonian and the basis change matrix
         J = np.block([[np.zeros((extended_dimension//2, extended_dimension//2)), np.eye(extended_dimension//2)],
                       [-np.eye(extended_dimension//2), np.zeros((extended_dimension//2, extended_dimension//2))]])
-        
+
         dynamical_matrix = J @ extended_quadratic_hamiltonian
-        _, T = symplectic_transformation(dynamical_matrix, no_flux_variables=extended_quadratic_hamiltonian.shape[0]//2)
-        extended_canonical_hamiltonian = T.T @ extended_quadratic_hamiltonian @ T
 
-        # Proceed with the second quantization: Express the quantum Hamiltonian in the ladder operators basis.
-        I = np.eye(len(extended_canonical_hamiltonian)//2)
-        G = (1 / np.sqrt(2)) * np.block([[I, I], [-1j * I, 1j * I]])
+        # Check for zero-frequency modes (Jordan blocks in the dynamical matrix).
+        # This happens when the extended sector contains variables without a conjugate
+        # energy pair (e.g., flux with inductance but no capacitance on that node).
+        # In this case symplectic diagonalization is not applicable.
+        #
+        # Use atol=1e-4 (not the default 1e-8) because a zero-frequency mode where
+        # H[charge,charge] ≈ machine-epsilon produces eigenvalues ±i·sqrt(E_L·ε) ≈ ±3e-8j,
+        # which exceeds atol=1e-8 and triggers a false "has oscillators" detection.
+        # Physical oscillator frequencies are O(1 GHz) >> 1e-4, so this threshold is safe.
+        eigvals_dyn = np.linalg.eigvals(dynamical_matrix) if extended_dimension > 0 else np.array([])
+        has_oscillators = extended_dimension > 0 and not np.allclose(eigvals_dyn, 0, atol=1e-4)
 
-        extended_quantum_hamiltonian = np.conj(G.T) @ extended_canonical_hamiltonian @ G
+        if has_oscillators:
+            _, T = symplectic_transformation(dynamical_matrix, no_flux_variables=extended_quadratic_hamiltonian.shape[0]//2)
+            extended_canonical_hamiltonian = T.T @ extended_quadratic_hamiltonian @ T
 
-        # Verify the resulting Hamiltonian in the ladder operators basis is equal to the canonical Hamiltonian
-        assert np.allclose(extended_quantum_hamiltonian, extended_canonical_hamiltonian), \
-        "The matrix expression for the Hamiltonian in the ladder operators basis must be the same as the canonical Hamiltonian matrix."
+            # Proceed with the second quantization: Express the quantum Hamiltonian in the ladder operators basis.
+            I = np.eye(len(extended_canonical_hamiltonian)//2)
+            G = (1 / np.sqrt(2)) * np.block([[I, I], [-1j * I, 1j * I]])
+
+            extended_quantum_hamiltonian = np.conj(G.T) @ extended_canonical_hamiltonian @ G
+
+            # Verify the resulting Hamiltonian in the ladder operators basis is equal to the canonical Hamiltonian
+            assert np.allclose(extended_quantum_hamiltonian, extended_canonical_hamiltonian), \
+            "The matrix expression for the Hamiltonian in the ladder operators basis must be the same as the canonical Hamiltonian matrix."
+        else:
+            # All extended modes are zero-frequency (free/frozen variables).
+            # No symplectic diagonalization or second quantization needed.
+            T = np.eye(extended_dimension) if extended_dimension > 0 else np.empty((0, 0))
+            G = np.eye(extended_dimension) if extended_dimension > 0 else np.empty((0, 0))
+            extended_quantum_hamiltonian = extended_quadratic_hamiltonian
 
         if self.debug:
             print(f"Extended Quantum H shape: {extended_quantum_hamiltonian.shape}")
@@ -322,10 +380,9 @@ class Quantization:
                 final_vector_JJ_an, final_vector_QPS_an)
 
 
-    def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9):
+    def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9, verbose: bool = True):
         """
-        Print the Hamiltonian twice: first symbolically (E_C, E_L, E_J, E_P as symbols),
-        then numerically (current Hamiltonian_expression format).
+        Print the Hamiltonian symbolically (E_C, E_L, E_J, E_P as symbols).
 
         The symbolic form shows the pre-normal-mode Hamiltonian after the Schur complement
         (Eq. 18 of the paper), which is linear in the energy parameters.
@@ -393,26 +450,57 @@ class Quantization:
         print(sep)
         print('Symbolic Hamiltonian:')
 
-        # Use LaTeX rendering in Jupyter, fall back to pretty-print in terminal
+        # Use LaTeX rendering in Jupyter, fall back to pretty-print in terminal.
+        # get_ipython() exists only inside an active IPython kernel (Jupyter);
+        # in a plain terminal script it raises NameError.
+        _in_jupyter = False
         try:
+            shell = get_ipython()
+            _in_jupyter = shell is not None and hasattr(shell, 'kernel')
+        except NameError:
+            pass
+
+        if _in_jupyter:
             from IPython.display import display, Math
             display(Math(r'H/\hbar = ' + sp.latex(H_expr)))
-        except (ImportError, NameError):
-            print(f'H/ℏ = {sp.pretty(H_expr, use_unicode=True)}')
+        else:
+            _sup = {'**2': '²', '**3': '³', '**4': '⁴', '**5': '⁵'}
+            s = str(H_expr)
+            for k, v in _sup.items():
+                s = s.replace(k, v)
+            s = s.replace('*', '·')
+            print(f'H/ℏ = {s}')
 
-        print()
-        print('Parameter values (GHz):')
-        for sym, val in sym_vals.items():
-            print(f'  {sym} = {val:.{precision}f}')
-        for sym, val in J_syms:
-            print(f'  {sym} = {val:.{precision}f}')
-        for sym, val in P_syms:
-            print(f'  {sym} = {val:.{precision}f}')
+        if verbose:
+            # ── Variable legend ───────────────────────────────────────────────
+            print()
+            print('Canonical variables:')
+            if nCF > 0:
+                print(f'  φ_c{{k}}  compact flux      (JJ sector, periodic S¹)  — conjugate: n_c')
+            if nCC > 0:
+                print(f'  ψ_c{{k}}  compact flux      (QPS sector, conjugate to q_c) — energy: E_L·ψ_c²')
+            if nEF > 0:
+                print(f'  φ_e{{k}}  extended flux     (oscillator modes, ℝ)')
+            if nCF > 0:
+                print(f'  n_c{{k}}  compact charge    (integer spectrum, conjugate to φ_c)')
+            if nCC > 0:
+                print(f'  q_c{{k}}  compact charge    (QPS sector, integer spectrum S¹)')
+            if nEF > 0:
+                print(f'  n_e{{k}}  extended charge   (oscillator modes, ℝ)')
 
-        # ── Print numerical ───────────────────────────────────────────────────
-        print()
-        print('Numerical Hamiltonian:')
-        self.Hamiltonian_expression(precision=precision)
+            print()
+            print('Parameter values (GHz):')
+            for sym, val in sym_vals.items():
+                print(f'  {sym} = {val:.{precision}f}')
+            for sym, val in J_syms:
+                print(f'  {sym} = {val:.{precision}f}')
+            for sym, val in P_syms:
+                print(f'  {sym} = {val:.{precision}f}')
+
+            # ── Print numerical ───────────────────────────────────────────────
+            print()
+            print('Numerical Hamiltonian:')
+            self.Hamiltonian_expression(precision=precision)
 
         return H_expr
 
@@ -437,9 +525,11 @@ class Quantization:
         print('----------------------------------------------------------------------')
     
 
-    def Hamiltonian_expression(self, precision: int = 3, tol: float = 1e-14):
+    def Hamiltonian_expression(self, precision: int = 3, tol: float = 1e-14, verbose: bool = True):
         """
-        Print out the Hamiltonian. 
+        Print the numerical Hamiltonian.
+        verbose=True (default): full output with coupling vectors, variable legend, operator explanations.
+        verbose=False: only the H/ℏ expression line.
         """
 
         # Define the matrices
@@ -457,24 +547,63 @@ class Quantization:
         print('----------------------------------------------------------------------')
 
         # Print the  Hamiltonian
-        print(f'Quantum Hamiltonian:')
+        print(f'Numerical Hamiltonian:')
         print(f'H/ℏ (GHz) =', end=" ")
 
-        # Print the extended Hamiltonian (pure oscillator modes only)
-        for i in range(no_compact_fluxes + no_compact_charges, no_flux_variables):
-            if np.abs(quantum_quadratic_hamiltonian[i,i]) > 1e-14:
-                print(f'+ {quantum_quadratic_hamiltonian[i,i]:.{precision}f} [(\u03D5_e{i-no_compact_fluxes+1})^2 + (n_e{i-no_compact_fluxes+1})^2]', end=" ")
-        
-        # Print interaction Hamiltonian
-        for i in range(no_flux_variables, 2*no_flux_variables):
-            for j in range(no_flux_variables, 2*no_flux_variables):
-                if np.abs(quantum_quadratic_hamiltonian[i,j]) > 1e-14 and i > j:
-                    print(f' + {(2 * quantum_quadratic_hamiltonian[i,j]):.{precision}f} n_e{i-no_flux_variables-no_compact_fluxes+1} n_c{j-no_flux_variables+1}', end=" ")
+        # --- Variable naming helper (matches symbolic Hamiltonian names) ---
+        nCF = no_compact_fluxes
+        nCC = no_compact_charges
+        nF  = no_flux_variables
 
-        # Print non-linear Hamiltonian
-        for i in range(no_compact_fluxes):
-            if np.abs(quantum_quadratic_hamiltonian[i+no_flux_variables, i+no_flux_variables]) > 1e-14:
-                print(f' + {quantum_quadratic_hamiltonian[i+no_flux_variables,i+no_flux_variables]:.{precision}f} (n_c{i+1})^2', end=" ")
+        def _var_label(i):
+            """Map matrix index to canonical variable name."""
+            if i < nCF:
+                return f'\u03D5_c{i+1}'            # ϕ_c  compact JJ flux
+            elif i < nCF + nCC:
+                return f'\u03C8_c{i-nCF+1}'        # ψ_c  QPS-conjugate flux
+            elif i < nF:
+                return f'\u03D5_e{i-nCF-nCC+1}'    # ϕ_e  extended flux
+            elif i < nF + nCF:
+                return f'n_c{i-nF+1}'              # n_c  JJ-conjugate charge
+            elif i < nF + nCF + nCC:
+                return f'q_c{i-nF-nCF+1}'          # q_c  QPS compact charge
+            else:
+                return f'n_e{i-nF-nCF-nCC+1}'      # n_e  extended charge
+
+        # Print the extended Hamiltonian (pure oscillator modes only)
+        for i in range(nCF + nCC, nF):
+            if np.abs(quantum_quadratic_hamiltonian[i,i]) > 1e-14:
+                k = i - nCF - nCC + 1
+                print(f'+ {quantum_quadratic_hamiltonian[i,i]:.{precision}f} [(\u03D5_e{k})^2 + (n_e{k})^2]', end=" ")
+
+        # Print QPS-conjugate flux quadratic terms (ψ_c: flux paired with compact charge)
+        # Display H coefficient = M_ii/2 (internal matrix M uses H = ½ξᵀMξ convention)
+        for i in range(nCF, nCF + nCC):
+            if np.abs(quantum_quadratic_hamiltonian[i,i]) > 1e-14:
+                print(f' + {quantum_quadratic_hamiltonian[i,i] / 2:.{precision}f} (\u03C8_c{i-nCF+1})^2', end=" ")
+
+        # Print compact flux diagonal terms (ϕ_c: JJ compact flux)
+        for i in range(nCF):
+            if np.abs(quantum_quadratic_hamiltonian[i,i]) > tol:
+                print(f' + {quantum_quadratic_hamiltonian[i,i] / 2:.{precision}f} (\u03D5_c{i+1})^2', end=" ")
+
+        # Print off-diagonal flux-flux coupling terms
+        # H coefficient for off-diagonal: M_ij (symmetric matrix contributes M_ij·x_i·x_j)
+        for i in range(nF):
+            for j in range(i):
+                if np.abs(quantum_quadratic_hamiltonian[i,j]) > tol:
+                    print(f' + {quantum_quadratic_hamiltonian[i,j]:.{precision}f} {_var_label(i)} {_var_label(j)}', end=" ")
+
+        # Print off-diagonal charge-charge coupling terms
+        for i in range(nF, 2*nF):
+            for j in range(nF, i):
+                if np.abs(quantum_quadratic_hamiltonian[i,j]) > tol:
+                    print(f' + {quantum_quadratic_hamiltonian[i,j]:.{precision}f} {_var_label(i)} {_var_label(j)}', end=" ")
+
+        # Print JJ-conjugate charge quadratic terms (n_c: charging energy)
+        for i in range(nCF):
+            if np.abs(quantum_quadratic_hamiltonian[i+nF, i+nF]) > 1e-14:
+                print(f' + {quantum_quadratic_hamiltonian[i+nF,i+nF] / 2:.{precision}f} (n_c{i+1})^2', end=" ")
 
         # Collect JJ energies
         junction_energy = []
@@ -505,50 +634,49 @@ class Quantization:
 
         print('')
 
-        np.set_printoptions(precision=precision)
-        print(f'JJ coupling vectors v (flux space):')
-        for i in range(vector_JJ.shape[1]):
-            print(f'v_{i+1} = {(vector_JJ[:, i].real).T}')
+        if verbose:
+            np.set_printoptions(precision=precision)
+            print(f'JJ coupling vectors v (flux space):')
+            for i in range(vector_JJ.shape[1]):
+                print(f'v_{i+1} = {(vector_JJ[:, i].real).T}')
 
-        if no_QPS > 0:
+            if no_QPS > 0:
+                print('')
+                print(f'QPS coupling vectors u (charge space):')
+                for i in range(vector_QPS.shape[1]):
+                    print(f'u_{i+1} = {(vector_QPS[:, i].real).T}')
+
             print('')
-            print(f'QPS coupling vectors u (charge space):')
-            for i in range(vector_QPS.shape[1]):
-                print(f'u_{i+1} = {(vector_QPS[:, i].real).T}')
 
-        print('')
-
-        print(f'Flux-charge variable vector \u03BE\u03C6:')
-        print(f'\u03BE\u03C6\u1D40 = (', end=" ")
-        for i in range(2*no_flux_variables):
-            if i < no_compact_fluxes:
-                print(f'\u03D5_c{i+1}', end=" ")
-            elif no_compact_fluxes <= i < no_flux_variables:
-                print(f' \u03D5_e{i-no_compact_fluxes+1}', end=" ")
-            elif no_flux_variables <= i < no_flux_variables + no_compact_fluxes:
-                print(f' n_c{i-no_flux_variables+1}', end=" ")
-            elif no_flux_variables + no_compact_fluxes <= i <= 2*no_flux_variables-1:
-                print(f' n_e{i-no_compact_fluxes-no_flux_variables+1}', end=" ")
-        print(f')')
-
-        if no_QPS > 0:
-            print(f'')
-            print(f'Charge variable vector \u03BEq (QPS sector):')
-            print(f'\u03BEq\u1D40 = (', end=" ")
-            for i in range(no_compact_charges):
-                print(f' q_c{i+1}', end=" ")
-            for i in range(no_flux_variables - no_compact_fluxes):
-                print(f' \u03C6_e{i+1}', end=" ")
+            print(f'Flux-charge variable vector \u03BE\u03C6:')
+            print(f'\u03BE\u03C6\u1D40 = (', end=" ")
+            for i in range(2*nF):
+                print(f' {_var_label(i)}', end=" ")
             print(f')')
 
-        print(f'')
+            if no_QPS > 0:
+                print(f'')
+                print(f'Charge variable vector \u03BEq (QPS sector):')
+                print(f'\u03BEq\u1D40 = (', end=" ")
+                for i in range(nCC):
+                    print(f' q_c{i+1}', end=" ")
+                for i in range(nCC):
+                    print(f' \u03C8_c{i+1}', end=" ")
+                nEF = nF - nCF - nCC
+                for i in range(nEF):
+                    print(f' \u03D5_e{i+1}', end=" ")
+                print(f')')
 
-        print(f'Operator subscripts explanation:')
-        print(f' - Subindex e: extended subspace (oscillator modes)')
-        print(f' - Subindex c: compact subspace (JJ flux / QPS charge)')
-        print('')
+            print(f'')
+            print(f'Operator subscripts explanation:')
+            print(f' - \u03D5_c: compact flux (JJ phase, periodic S\u00B9)')
+            print(f' - \u03C8_c: QPS-conjugate flux (paired with compact charge q_c)')
+            print(f' - \u03D5_e, n_e: extended oscillator modes (\u211D)')
+            print(f' - n_c: JJ-conjugate charge (Cooper pair number)')
+            print(f' - q_c: compact charge (QPS, periodic S\u00B9)')
+            print('')
+            print(f'Relation between number-phase operators and flux-charge operators:')
+            print(f' - n = Q/(2e)')
+            print(f' - \u03D5 = 2\u03C0 \u03C6/(\u03C6_0)')
 
-        print(f'Relation between number-phase operators and flux-charge operators:')
-        print(f' - n = Q/(2e)')
-        print(f' - \u03D5 = 2\u03C0 \u03C6/(\u03C6_0)')
         print('----------------------------------------------------------------------')

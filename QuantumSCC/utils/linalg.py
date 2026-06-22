@@ -4,9 +4,106 @@ algebra.py contains the  algebraic functions the program needs to its correct op
 """
 
 import numpy as np
+from fractions import Fraction
+from math import gcd
+from functools import reduce
 from scipy.linalg import null_space
 
 Matrix = np.ndarray
+
+
+def integer_null_space(M: np.ndarray) -> np.ndarray:
+    """
+    Compute the integer null space of a matrix with rational entries.
+
+    Uses exact arithmetic (fractions.Fraction) to compute RREF,
+    then back-substitutes to produce kernel vectors with integer entries.
+    Each column is normalized so that entries are coprime integers.
+
+    Parameters
+    ----------
+    M : np.ndarray
+        Input matrix (m x n) with integer or rational entries.
+
+    Returns
+    -------
+    K : np.ndarray
+        Integer kernel matrix (n x d) where d = n - rank(M).
+        M @ K = 0 (exact). Entries are integers (typically 0, ±1).
+        Returns shape (n, 0) if kernel is trivial.
+    """
+    m, n = M.shape
+    if m == 0:
+        return np.eye(n, dtype=float)
+
+    # Convert to exact Fraction arithmetic
+    R = [[Fraction(M[i, j]).limit_denominator(10**12) for j in range(n)] for i in range(m)]
+
+    # Forward elimination with partial pivoting → RREF
+    pivot_cols = []
+    pivot_row = 0
+    for col in range(n):
+        # Find pivot in this column
+        found = -1
+        for row in range(pivot_row, m):
+            if R[row][col] != 0:
+                found = row
+                break
+        if found == -1:
+            continue
+
+        # Swap rows
+        R[pivot_row], R[found] = R[found], R[pivot_row]
+
+        # Scale pivot row
+        scale = R[pivot_row][col]
+        for j in range(n):
+            R[pivot_row][j] /= scale
+
+        # Eliminate all other rows
+        for row in range(m):
+            if row == pivot_row:
+                continue
+            factor = R[row][col]
+            if factor != 0:
+                for j in range(n):
+                    R[row][j] -= factor * R[pivot_row][j]
+
+        pivot_cols.append(col)
+        pivot_row += 1
+
+    rank = len(pivot_cols)
+    free_cols = [j for j in range(n) if j not in pivot_cols]
+
+    if len(free_cols) == 0:
+        return np.zeros((n, 0), dtype=float)
+
+    # Build kernel vectors: for each free column, set it to 1
+    # and read off pivot values from RREF
+    K_cols = []
+    for fc in free_cols:
+        vec = [Fraction(0)] * n
+        vec[fc] = Fraction(1)
+        for i, pc in enumerate(pivot_cols):
+            vec[pc] = -R[i][fc]
+        K_cols.append(vec)
+
+    # Convert to integer vectors (multiply by LCM of denominators)
+    K = np.zeros((n, len(K_cols)), dtype=float)
+    for j, vec in enumerate(K_cols):
+        denoms = [abs(v.denominator) for v in vec if v != 0]
+        if denoms:
+            lcm_val = reduce(lambda a, b: a * b // gcd(a, b), denoms)
+        else:
+            lcm_val = 1
+        int_vec = [int(v * lcm_val) for v in vec]
+        # Normalize by GCD
+        g = reduce(gcd, [abs(x) for x in int_vec if x != 0], 0)
+        if g > 0:
+            int_vec = [x // g for x in int_vec]
+        K[:, j] = int_vec
+
+    return K
 
 def GaussJordan(M: Matrix):
     """
@@ -26,15 +123,17 @@ def GaussJordan(M: Matrix):
     """
     
     nrows, ncolumns = M.shape
-    assert nrows <= ncolumns, "Kirchhoff matrix dimensions are incorrect."
     M = M.copy()
     order = np.arange(ncolumns)
-    for i in range(nrows):
+    n_pivots = min(nrows, ncolumns)
+    for i in range(n_pivots):
         k = np.argmax(np.abs(M[i, i:]))
         if k != 0:
             Maux = M.copy()
             M[:, i], M[:, i + k] = Maux[:, i + k], Maux[:, i]
             order[i], order[i + k] = order[i + k], order[i]
+        if np.abs(M[i, i]) < 1e-15:
+            continue
         for j in range(i + 1, nrows):
             M[j, :] -= M[i, :] * M[j, i] / M[i, i]
 
@@ -56,11 +155,7 @@ def reverseGaussJordan(M: Matrix):
             Diagonal form of the input matrix once the algorithm has been applied.
     """
 
-    if False:
-        factor = 1 / np.diag(M)
-        M = factor[:, np.newaxis] * M
-    else:
-        M = np.diag(1.0 / np.diag(M)) @ M
+    M = np.diag(1.0 / np.diag(M)) @ M
 
     for i, row in reversed(list(enumerate(M))):
         for j in range(i):
@@ -90,65 +185,6 @@ def remove_zero_rows(M: Matrix, tol: float=1e-16):
     M = M[(row_norm_1 > tol), :]
     return M
 
-
-def GS_algorithm(M: Matrix, normal: bool=True, delete_zeros: bool=True ,tol: float=1e-14):
-    """
-    Apply the Gram-Schmidt (GS) algorithm to the columns of the matrix M.
-
-    Parameters
-    ----------
-        M: Matrix
-            Matrix to which columns the GS algorithm is applied
-        normal: bool
-            Parameter to indicate if the algorithm normalize the resulting orthogonal vectors or not. 
-        delete_zeros: boll
-            Parameter to indicate if the algorithm deletes the zero columns or not. By default it is True.
-        tol: float
-            Tolerance below which a number is considered 0. By default it is 1e-14
-
-    Returns
-    ----------
-        M_out: Matrix 
-            Resulting matrix with the columns being orthognormal (normal=True) or just orthogonal (normal=False)
-    """
-
-    # Ensure the first vector is not zero
-    if np.all(np.abs(M[:,0]) < tol):
-        raise ValueError('The first vector of input matrix M must be different from zero')
-
-    # Preallocate M_out
-    M_out = np.zeros((M.shape[0], M.shape[1]))
-
-    # Define and normalize if normal = True the first vectors
-    M_out[:,0] = M[:,0]
-    if normal == True:
-        M_out[:,0] = M_out[:,0]/np.sqrt(M_out[:,0].T @ M_out[:,0])
-
-    # Orthogonalize (normal=false) or orthonormalize (normal=True) the other vectors
-    for i in range(1, M.shape[1]):
-        sum = np.zeros([M.shape[0], 1])
-
-        for j in range(i):
-            if np.any(np.abs(M_out[:,j]) > tol):
-                sum[:,0] = sum[:,0] + ((M[:,i].T @ M_out[:,j])/(M_out[:,j].T @ M_out[:,j])) * M_out[:,j] 
-
-        M_out[:,i] = M[:,i] - sum[:,0]
-
-        if normal == True:
-            if np.any(np.abs(M_out[:,i]) > tol):
-                M_out[:,i] = M_out[:,i]/np.sqrt(M_out[:,i].T @ M_out[:,i])
-
-    # Delete zero columns if delete_zeros = True
-    if delete_zeros == True:
-        zero_list = []
-        for i in range(M_out.shape[1]):
-            if not np.any(np.abs(M_out[:, i]) > tol): 
-                zero_list.append(i)
-                
-        M_out = np.delete(M_out, zero_list, axis=1) 
-
-    return M_out
- 
 
 def pseudo_inv(M: Matrix, tol: float=1e-15):
     """
@@ -182,52 +218,6 @@ def pseudo_inv(M: Matrix, tol: float=1e-15):
     # Get the pseudo-inverse
     pseudo_inv = Vt.T @ S_inv @ U.T
     return pseudo_inv
-
-
-def nonzero_indexes(M: Matrix, tol: float=1e-14):
-    """
-    It returns the row indexes of the non-zero elements in the matrix M, with a tolerance.
-    Parameters
-    ----------
-        M: Matrix
-            Matrix from which we want the non-zero row indexes.
-        tol: float
-            Tolerance below which the element is considered zero. By default, it is 1e-14.
-    Returns
-    ----------
-        indexes: list
-            List of row indexes of the non-zero elements in the input matrix M.
-    """
-    indexes = []
-    for j in range(M.shape[1]):
-        for i in range(M.shape[0]):
-            if abs(M[i,j]) > tol:
-                indexes.append(i)
-
-    indexes = sorted(set(indexes))
-    
-    return indexes
-
-
-def first_zero_index(v: np.array, tol: float=1e-14):
-    """
-    It returns the index of the first zero element in the vector v with a certain tolerance
-
-    Parameters
-    ----------
-        v: np.array
-            Vector from which we want the first zero index.
-        tol: float
-            Tolerance below which the element is considered zero. By default, it is 1e-14.
-    Returns
-    ----------
-    i: int
-        Index of the first zero element in the vector v.
-    """
-    for i, val in enumerate(v):
-        if abs(val) < tol:  
-            return i
-    return None  # If there are no zero elements, it returns None
 
 
 def proportional_rows(M: Matrix , tol: float=1e-14):
@@ -338,12 +328,29 @@ def omega_symplectic_transformation(
 ) -> tuple:
     """
     Transform an antisymmetric matrix Omega to the symplectic matrix J such that
-    J = V.T @ Omega @ V, treating compact flux and compact charge subspaces separately.
+    J = V.T @ Omega @ V, using the systematic Darboux reduction from
+    QPS-JJ-reduction.pdf (PRX 2025 procedure).
 
-    The algorithm uses a Darboux-style construction. The permuted variable order is
-    (compact flux, all charges, extended flux), and the original algorithm naturally
-    handles both compact flux (JJ) and compact charge (QPS) variables, since the
-    charge block includes both compact and extended charges uniformly.
+    Variable ordering of Omega: [φ_S | φ_R | Q_S | Q_R]
+      φ_S = compact flux   (nCF)     Q_S = compact charge  (nCC)
+      φ_R = extended flux   (nEF)     Q_R = extended charge (nEC)
+
+    Block structure (Eq. 42 two-topology):
+                 φ_S    φ_R    Q_S    Q_R
+        φ_S  [   0      0      0      A   ]
+        φ_R  [   0      0    -B^T   -D^T  ]
+        Q_S  [   0      B      0      0   ]
+        Q_R  [  -A^T    D      0      *   ]
+
+    where (QPS-JJ-reduction.pdf):
+      A = ω[φ_S, Q_R]  (nCF × nEC): compact flux ↔ extended charge
+      B = ω[Q_S, φ_R]  (nCC × nEF): compact charge ↔ extended flux
+      D = ω[Q_R, φ_R]  (nEC × nEF): extended charge ↔ extended flux
+
+    Pairing order (PDF systematic reduction):
+      Phase 1: φ_S ↔ Q_R via A  (compact flux picks extended charge)
+      Phase 2: φ_R ↔ Q_S via B  (extended flux picks compact charge)
+      Phase 3: φ_R ↔ Q_R via D  (remaining extended flux picks remaining Q_R)
 
     Parameters
     ----------
@@ -413,24 +420,117 @@ def omega_symplectic_transformation(
     nF  = no_flux_variables
     nQ  = no_charge_variables
     nEF = no_extended_flux_variables
+    nCC = no_compact_charge_variables
 
-    # Detect the actual flux↔charge pairing from Omega_new.
-    # For standard circuits, compact flux pairs with compact charge (identity permutation).
-    # For crossed-pairing circuits (e.g. JJ-QPS chain), compact flux conjugates with
-    # extended charge. The greedy bijection detects this automatically:
-    # charge_perm[i] = j means charge j (in 0..nQ-1 charge indexing) is the conjugate
-    # of flux i. Leftover charges (nQ > nF) are appended in order.
-    Omega_fc = Omega_new[:nF, nF:nF + nQ]  # (nF, nQ): flux rows × charge cols
+    # ── Hidden gauge detection via T_QR / T_ΦR (QPS-JJ-reduction.pdf §2-4)
+    #
+    # The block structure of Ω after Kirchhoff is:
+    #
+    #        φ_S    φ_R    Q_S    Q_R
+    #  φ_S [  0      0      0      A  ]
+    #  φ_R [  0      0    -B^T   -D^T ]
+    #  Q_S [  0      B      0      0  ]
+    #  Q_R [ -A^T    D      0      *  ]
+    #
+    # where A = Ω[φ_S, Q_R], B = Ω[Q_S, φ_R], D = Ω[Q_R, φ_R].
+    #
+    # The paper constructs sector-specific rotations:
+    #   T_QR = [A; basis(A⊥)]  — transforms Q_R only (nEC × nEC)
+    #   T_ΦR = [B; basis(B⊥)]  — transforms φ_R only (nEF × nEF)
+    #
+    # After applying these, φ_S and Q_S are NEVER rotated, preserving
+    # the topological correspondence. Hidden gauges become coordinate-
+    # aligned and can be deleted. The remaining block D' is reduced
+    # by the standard Darboux algorithm.
+    sector_rotation = None
+    sector_delete_hidden = []
+
+    nEC = nQ - nCC
+    has_hidden_gauges = False
+
+    if nF > nQ and nQ > 0:
+        # Hidden gauge detection via SVD of Ω_FC (QPS-JJ-reduction.pdf §2-4)
+        #
+        # When nF > nQ, there are flux gauge directions that are non-coordinate-
+        # aligned linear combinations (e.g., φ_S - φ_R in bare triangle circuits).
+        #
+        # We construct the rotation using the paper's approach:
+        #   T_QR = [A; basis(A⊥)] for Q_R sector
+        #   T_ΦR = [B; basis(B⊥)] for Φ_R sector
+        # applied within their respective sectors (φ_S and Q_S are preserved).
+        #
+        # However, when the gauge direction crosses sectors (spans both φ_S and φ_R),
+        # we must also rotate the full flux sector to align the gauge.
+        # We use SVD of Ω_FC = Ω[all flux, all charge] for this.
+        Omega_FC = Omega_new[:nF, nF:]
+        rank_FC = np.linalg.matrix_rank(Omega_FC, tol=tol)
+        n_flux_gauge = nF - rank_FC
+
+        if n_flux_gauge > 0:
+            U, S, Vt = np.linalg.svd(Omega_FC, full_matrices=True)
+
+            # Reorder dynamical columns: purely-compact first, then mixed/extended.
+            # A dynamical direction j is compact iff U[nCF:, j] ≈ 0
+            # (lies entirely within the original compact flux subspace).
+            compact_dyn = [j for j in range(rank_FC)
+                           if np.all(np.abs(U[nCF:, j]) < tol)]
+            extended_dyn = [j for j in range(rank_FC)
+                            if not np.all(np.abs(U[nCF:, j]) < tol)]
+            gauge_cols = list(range(rank_FC, nF))
+            perm_cols = compact_dyn + extended_dyn + gauge_cols
+            U = U[:, perm_cols]
+
+            # Build rotation: R = block_diag(U^T, I_charge)
+            R = np.eye(Omega_new.shape[0])
+            R[:nF, :nF] = U.T
+
+            Omega_new = R @ Omega_new @ R.T
+
+            # Last n_flux_gauge flux rows/cols are now zero — delete them
+            sector_delete_hidden = list(range(nF - n_flux_gauge, nF))
+            Omega_new = np.delete(Omega_new, sector_delete_hidden, axis=0)
+            Omega_new = np.delete(Omega_new, sector_delete_hidden, axis=1)
+
+            sector_rotation = R
+            has_hidden_gauges = True
+
+            # Update variable counts
+            new_nCF = len(compact_dyn)
+            nCF = new_nCF
+            nF = rank_FC
+            nEF = nF - nCF
+            no_compact_flux_variables = nCF
+            no_flux_variables = nF
+            no_extended_flux_variables = nEF
+
+    # ── Deterministic charge pairing (QPS-JJ-reduction.pdf) ──────────────
+    # With correctly constructed K (Eq. 42 integer kernel + [compact|extended]
+    # ordering), the block structure of Omega = K^T · omega_2B · K gives:
+    #
+    #   ω[φ_S, Q_R] = A  (non-zero)     ω[φ_S, Q_S] = 0  (structural zero)
+    #   ω[Q_S, φ_R] = B  (non-zero)     ω[φ_S, φ_R] = 0  (structural zero)
+    #   ω[Q_R, φ_R] = D  (non-zero)     ω[Q_S, Q_R] = 0  (structural zero)
+    #
+    # The pairing is determined by the block structure alone — no search needed.
+    # charge_perm[i] = j means flux i pairs with charge j (0-indexed in charge block).
+    # Charge indices: Q_S at 0..nCC-1, Q_R at nCC..nQ-1.
     charge_perm = []
-    available = list(range(nQ))
-    for i in range(nF):
-        if not available:
-            break
-        scores = [abs(Omega_fc[i, j]) for j in available]
-        best = available[int(np.argmax(scores))]
-        charge_perm.append(best)
-        available.remove(best)
-    charge_perm = charge_perm + available   # leftover charges (nQ > nF) appended in order
+    available_QR = list(range(nCC, nQ))   # Q_R indices
+    available_QS = list(range(nCC))       # Q_S indices
+
+    # Phase 1: φ_S[i] → Q_R[i]  (via A block)
+    for i in range(nCF):
+        charge_perm.append(available_QR.pop(0))
+
+    # Phase 2: φ_R[j] → Q_S[j]  (via B block)
+    # Phase 3: remaining φ_R → Q_R  (via D block)
+    for j in range(nEF):
+        if available_QS:
+            charge_perm.append(available_QS.pop(0))
+        elif available_QR:
+            charge_perm.append(available_QR.pop(0))
+
+    charge_perm += available_QS + available_QR  # leftover charges (nQ > nF)
 
     # Permute variables to working order: (compact flux, charges[charge_perm], extended flux).
     # charge_perm reorders the charge block so that the conjugate of each flux variable
@@ -472,8 +572,8 @@ def omega_symplectic_transformation(
 
     # Block 1: compact flux variables — set unit vector and read conjugate from Omega row
     for i in range(nCF):
-        inv_V[i, i] = 1
-        inv_V[i + nCF, :] = Omega_perm[i, :]
+        inv_V[i, i] = 1 # canonical position q
+        inv_V[i + nCF, :] = Omega_perm[i, :] # canonical momentum p
 
     # Block 2: extended flux variables — read their Omega rows into the charge block
     for i in range(nEF):
@@ -521,9 +621,32 @@ def omega_symplectic_transformation(
         col_idx = list(range(nF)) + [nF + inv_charge_perm[k] for k in range(nQ)]
         inv_V = inv_V[:, col_idx]
 
-    # Restore gauge variable rows/cols
+    # ── Restore sector-rotated gauge variables ─────────────────────────
+    # inv_V is currently in the T_QR/T_ΦR-reduced coordinate space.
+    #   (a) Re-insert rows/cols for the deleted gauge directions
+    #   (b) Compose with R to undo the sector rotation
+    if sector_rotation is not None:
+        n_dyn = inv_V.shape[0]
+        n_gauges = len(sector_delete_hidden)
+
+        # (a) Insert gauge rows (at the bottom) and columns (at deleted positions)
+        inv_V = np.vstack((inv_V, np.zeros((n_gauges, inv_V.shape[1]))))
+        for i, idx in enumerate(sector_delete_hidden):
+            inv_V = np.hstack((
+                inv_V[:, :idx],
+                np.zeros((inv_V.shape[0], 1)),
+                inv_V[:, idx:]
+            ))
+            inv_V[n_dyn + i, idx] = 1
+
+        # (b) Compose with R: inv_V was in rotated coords,
+        # multiply on the right by R to transform columns back to unrotated.
+        # Derivation: V_total = R^T @ V_d ⟹ inv_V_total = inv_V_d @ R
+        inv_V = inv_V @ sector_rotation
+
+    # ── Restore zero-row gauge variable rows/cols ────────────────────────
     no_gauge_variables     = len(delete_index_list)
-    no_non_gauge_variables = Omega_new.shape[0]
+    no_non_gauge_variables = inv_V.shape[0]
 
     if no_gauge_variables > 0:
         inv_V = np.vstack((inv_V, np.zeros((no_gauge_variables, inv_V.shape[1]))))
@@ -599,12 +722,14 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
     assert 2 * len(imag_eigval) + len(zero_eigval) == len(M_eigval), \
         "The input matrix must have only zero or pure imaginary eigenvalues by conjugate pairs"
     
-    # Define the symplectic matrix J with the correct dimensions
-    J = np.zeros((2 * len(imag_eigval) + len(zero_eigval), 2 * len(imag_eigval) + len(zero_eigval)))
-    I = np.eye(len(imag_eigval))
-    
-    J[:len(imag_eigval), len(imag_eigval):2 * len(imag_eigval)] = I
-    J[len(imag_eigval):2 * len(imag_eigval), :len(imag_eigval)] = -I 
+    # Define the physical symplectic matrix J = [[0, I_nf], [-I_nf, 0]].
+    # Using J_phys (not J_code) ensures correct normalization for circuits
+    # with zero-energy modes where oscillator eigenvectors span both blocks.
+    n = M.shape[0]
+    nf = no_flux_variables
+    J = np.zeros((n, n))
+    J[:nf, nf:2*nf] = np.eye(nf)
+    J[nf:2*nf, :nf] = -np.eye(nf)
     
     # Eigenvectors normalization under the symplectic inner product
     normal_imag_eigvec = np.empty((M.shape[0], 0))
@@ -642,21 +767,47 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
             normal_imag_eigvec[:,i] = 1j * normal_imag_eigvec[:,i]
 
     # Construct the basis change matrix T that brings M to eigval*J
-    T_plus = np.empty((2*len(imag_eigval) + len(zero_eigval), 0))
-    T_minus = np.empty((2*len(imag_eigval) + len(zero_eigval), 0))
-    T = np.empty((2*len(imag_eigval) + len(zero_eigval), 0))
+    T_plus = np.empty((n, 0))
+    T_minus = np.empty((n, 0))
 
     for i in range(len(imag_eigval)):
-        sigma = 1j * np.sign((imag_eigvec[:,i].T @ J @ np.conj(imag_eigvec[:,i]))/1j)
-
         T_plus = np.hstack((T_plus, np.sqrt(2) * (normal_imag_eigvec[:,i].real).reshape(-1,1)))
+        T_minus = np.hstack((T_minus, np.sqrt(2) * (normal_imag_eigvec[:,i].imag).reshape(-1,1)))
 
-        #T_minus = np.hstack((T_minus, np.sqrt(2)*((sigma * (-1) * np.conjugate(normal_imag_eigvec[:,i])).real).reshape(-1,1)))
-        T_minus = np.hstack((T_minus, np.sqrt(2)*((normal_imag_eigvec[:,i]).imag).reshape(-1,1)))
+    # Handle zero eigenvectors: classify as flux-like or charge-like
+    # and form symplectic pairs under J_phys.
+    n_zero = len(zero_eigval)
+    if n_zero > 0:
+        # Recover H from M = JH: H = J^{-1} M = -J M (since J^{-1} = -J)
+        H_recovered = (-J @ M).real
+        H_recovered = 0.5 * (H_recovered + H_recovered.T)
 
-    T = np.hstack((T, T_plus))
-    T = np.hstack((T, T_minus))
-    T = np.hstack((T, zero_eigvec))
+        H_ff = H_recovered[:nf, :nf]
+        H_cc = H_recovered[nf:, nf:]
+
+        # Find null spaces of flux and charge blocks (symmetric PSD)
+        eigval_ff, eigvec_ff = np.linalg.eigh(H_ff)
+        eigval_cc, eigvec_cc = np.linalg.eigh(H_cc)
+
+        null_ff = eigvec_ff[:, np.abs(eigval_ff) < tol]
+        null_cc = eigvec_cc[:, np.abs(eigval_cc) < tol]
+
+        assert null_ff.shape[1] == null_cc.shape[1], \
+            "Unbalanced zero modes: flux and charge null spaces have different dimensions"
+
+        # Embed in full space: flux vectors in [v_f, 0], charge vectors in [0, v_c]
+        zero_flux_vecs = np.vstack([null_ff, np.zeros((nf, null_ff.shape[1]))])
+        zero_charge_vecs = np.vstack([np.zeros((nf, null_cc.shape[1])), null_cc])
+
+        # Normalize symplectic pairing: v_f^T J v_c = 1 for each pair
+        for k in range(null_ff.shape[1]):
+            beta = zero_flux_vecs[:, k] @ J @ zero_charge_vecs[:, k]
+            zero_charge_vecs[:, k] /= beta
+
+        # Assemble T = [osc_flux | zero_flux | osc_charge | zero_charge]
+        T = np.hstack((T_plus, zero_flux_vecs, T_minus, zero_charge_vecs))
+    else:
+        T = np.hstack((T_plus, T_minus))
 
     # Verify that the matrix T satisies the conditions it must satisfy
     assert T.shape[0] == M.shape[0], "There is an error in the construction of the normal form transfromation matrix T. \

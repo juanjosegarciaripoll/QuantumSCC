@@ -96,77 +96,108 @@ class TestInductorConversions(unittest.TestCase):
 
 class TestJunctionConversions(unittest.TestCase):
 
-    def _cap(self):
-        return Capacitor(1, unit='pF')
-
     def test_value_ghz_returns_1(self):
         """Junction(1 GHz).value() == 1.0."""
-        self.assertAlmostEqual(Junction(1.0, unit='GHz', cap=self._cap()).value(), 1.0, places=10)
+        self.assertAlmostEqual(Junction(1.0, unit='GHz').value(), 1.0, places=10)
 
     def test_value_thz_converts_to_ghz(self):
         """Junction(1 THz).value() == 1000.0 GHz."""
-        self.assertAlmostEqual(Junction(1.0, unit='THz', cap=self._cap()).value(), 1000.0, places=7)
+        self.assertAlmostEqual(Junction(1.0, unit='THz').value(), 1000.0, places=7)
 
     def test_value_mhz_converts_to_ghz(self):
         """Junction(1000 MHz).value() == 1.0 GHz."""
-        self.assertAlmostEqual(Junction(1000.0, unit='MHz', cap=self._cap()).value(), 1.0, places=8)
+        self.assertAlmostEqual(Junction(1000.0, unit='MHz').value(), 1.0, places=8)
 
-    def test_missing_cap_raises(self):
-        """Junction without a parallel capacitor raises ValueError."""
-        with self.assertRaises(ValueError):
-            Junction(1, unit='GHz')
+    def test_bare_junction_creates(self):
+        """Junction without cap parameter creates successfully."""
+        j = Junction(1, unit='GHz')
+        self.assertAlmostEqual(j.value(), 1.0, places=10)
 
     def test_invalid_unit_raises(self):
         """Junction with a non-frequency unit raises ValueError."""
         with self.assertRaises(ValueError):
-            Junction(1, unit='nH', cap=self._cap())
-
-    def test_parallel_cap_stored(self):
-        """cap attribute must be the capacitor passed at construction."""
-        cap = self._cap()
-        j = Junction(1.0, unit='GHz', cap=cap)
-        self.assertIs(j.cap, cap)
+            Junction(1, unit='nH')
 
 
 # ── PhaseSlip ─────────────────────────────────────────────────────────────────
 
 class TestPhaseSlipConversions(unittest.TestCase):
 
-    def _ind(self):
-        return Inductor(1, unit='nH')
-
     def test_value_ghz_returns_1(self):
         """PhaseSlip(1 GHz).value() == 1.0."""
-        self.assertAlmostEqual(PhaseSlip(1.0, unit='GHz', ind=self._ind()).value(), 1.0, places=10)
+        self.assertAlmostEqual(PhaseSlip(1.0, unit='GHz').value(), 1.0, places=10)
 
     def test_value_thz_converts_to_ghz(self):
         """PhaseSlip(1 THz).value() == 1000.0 GHz."""
-        self.assertAlmostEqual(PhaseSlip(1.0, unit='THz', ind=self._ind()).value(), 1000.0, places=7)
+        self.assertAlmostEqual(PhaseSlip(1.0, unit='THz').value(), 1000.0, places=7)
 
     def test_value_mhz_converts_to_ghz(self):
         """PhaseSlip(1000 MHz).value() == 1.0 GHz."""
-        self.assertAlmostEqual(PhaseSlip(1000.0, unit='MHz', ind=self._ind()).value(), 1.0, places=8)
+        self.assertAlmostEqual(PhaseSlip(1000.0, unit='MHz').value(), 1.0, places=8)
 
-    def test_missing_ind_raises(self):
-        """PhaseSlip without a parallel inductor raises ValueError."""
-        with self.assertRaises(ValueError):
-            PhaseSlip(1, unit='GHz')
+    def test_bare_phaseslip_creates(self):
+        """PhaseSlip without L_value parameter creates successfully."""
+        p = PhaseSlip(1, unit='GHz')
+        self.assertAlmostEqual(p.value(), 1.0, places=10)
 
     def test_invalid_unit_nH_raises(self):
         """PhaseSlip with an inductance unit raises ValueError."""
         with self.assertRaises(ValueError):
-            PhaseSlip(1, unit='nH', ind=self._ind())
+            PhaseSlip(1, unit='nH')
 
     def test_invalid_unit_pF_raises(self):
         """PhaseSlip with a capacitance unit raises ValueError."""
         with self.assertRaises(ValueError):
-            PhaseSlip(1, unit='pF', ind=self._ind())
+            PhaseSlip(1, unit='pF')
 
-    def test_parallel_inductor_stored(self):
-        """ind attribute must be the inductor passed at construction."""
-        ind = self._ind()
-        ps = PhaseSlip(1.0, unit='GHz', ind=ind)
-        self.assertIs(ps.ind, ind)
+
+# ── Positive energy validation ────────────────────────────────────────────────
+
+class TestPositiveEnergyValidation(unittest.TestCase):
+    """All elements must reject zero and negative energy/value."""
+
+    def test_capacitor_negative_raises(self):
+        with self.assertRaises(ValueError):
+            Capacitor(-1, 'GHz')
+
+    def test_capacitor_zero_raises(self):
+        with self.assertRaises(ValueError):
+            Capacitor(0, 'GHz')
+
+    def test_capacitor_negative_farads_raises(self):
+        with self.assertRaises(ValueError):
+            Capacitor(-1, 'pF')
+
+    def test_inductor_negative_raises(self):
+        with self.assertRaises(ValueError):
+            Inductor(-1, 'GHz')
+
+    def test_inductor_zero_raises(self):
+        with self.assertRaises(ValueError):
+            Inductor(0, 'nH')
+
+    def test_junction_negative_raises(self):
+        with self.assertRaises(ValueError):
+            Junction(-5, 'GHz')
+
+    def test_junction_zero_raises(self):
+        with self.assertRaises(ValueError):
+            Junction(0, 'GHz')
+
+    def test_phaseslip_negative_raises(self):
+        with self.assertRaises(ValueError):
+            PhaseSlip(-1, 'GHz')
+
+    def test_phaseslip_zero_raises(self):
+        with self.assertRaises(ValueError):
+            PhaseSlip(0, 'GHz')
+
+    def test_positive_values_accepted(self):
+        """Positive values should work fine (sanity check)."""
+        Capacitor(1, 'GHz')
+        Inductor(1, 'GHz')
+        Junction(1, 'GHz')
+        PhaseSlip(1, 'GHz')
 
 
 if __name__ == '__main__':

@@ -40,6 +40,12 @@ class Capacitor:
                 "Look at the documentation for the correct input format."
             )
 
+        if value <= 0:
+            raise ValueError(
+                f"Capacitor value must be positive, got {value}. "
+                "Energy (E_C) and capacitance (C) are physical quantities > 0."
+            )
+
         self.cValue = value
         self.type = type(self)
 
@@ -109,6 +115,12 @@ class Inductor:
                 "Look at the documentation for the correct input format."
             )
 
+        if value <= 0:
+            raise ValueError(
+                f"Inductor value must be positive, got {value}. "
+                "Energy (E_L) and inductance (L) are physical quantities > 0."
+            )
+
         self.lValue = value
         self.type = type(self)
 
@@ -155,27 +167,31 @@ class Junction:
     """
     Class that contains the Josephson junction properties.
 
+    Single-branch element: carries only the nonlinear energy -E_J cos(phi).
+    The user must add a parallel Capacitor explicitly if needed (e.g. for transmon).
+
     Parameters
     -----------
     value: float
-        The value of the Josephson junction.
+        The Josephson energy E_J.
     unit: Optional[str]
-        The unit of input value ("THz", "GHz", etc.). 
-        Specifies the junction energy E_J.
-    cap: Optional[Capacitor]
-        Capacitor associated to the Josephson junction (required for renormalization).
+        The unit of input value ("THz", "GHz", etc.).
     """
 
     def __init__(
         self,
         value: float,
         unit: Optional[str] = None,
-        cap: Optional[Capacitor] = None,
     ) -> None:
 
         if unit not in unt.freq_list and unit is not None:
             raise ValueError(
                 "The input unit for the Josephson Junction is not correct."
+            )
+
+        if value <= 0:
+            raise ValueError(
+                f"Junction energy E_J must be positive, got {value}."
             )
 
         self.jValue = value
@@ -185,14 +201,6 @@ class Junction:
             self.unit = unt.get_unit_JJ()
         else:
             self.unit = unit
-
-        if cap is None:
-            raise ValueError(
-                "For the correct operation of the program, each Josephson "
-                "junction must have a parallel capacitor."
-            )
-        else:
-            self.cap = cap
 
     def value(self) -> float:
         """
@@ -206,11 +214,8 @@ class PhaseSlip:
     """
     Quantum Phase Slip (QPS) element — electromagnetic dual of Josephson Junction.
 
-    - JJ: compact flux φ_J ∈ S¹, energy = -E_J cos(2π φ/Φ₀)
-    - QPS: compact charge q_P ∈ S¹, energy = -E_P cos(π q/e)
-
-    Requires a parallel inductor (ind) for circuit dynamics,
-    dual to how Junction requires a parallel Capacitor.
+    Single-branch element: carries only the nonlinear energy -E_P cos(pi q / e).
+    The user must add a parallel Inductor explicitly if needed (e.g. for dual-transmon).
 
     Parameters
     ----------
@@ -218,21 +223,23 @@ class PhaseSlip:
         Phase slip amplitude E_P in frequency units.
     unit : Optional[str]
         Frequency unit (GHz, THz, etc.).
-    ind : Inductor
-        Parallel inductor (REQUIRED — provides flux dynamics).
     """
 
     def __init__(
         self,
         value: float,
         unit: Optional[str] = None,
-        ind=None,
     ) -> None:
 
         if unit not in unt.freq_list and unit is not None:
             raise ValueError(
                 "The input unit for the PhaseSlip element is not correct. "
                 "It must be a frequency unit (GHz, THz, ...)."
+            )
+
+        if value <= 0:
+            raise ValueError(
+                f"PhaseSlip energy E_P must be positive, got {value}."
             )
 
         self.pValue = value
@@ -243,17 +250,9 @@ class PhaseSlip:
         else:
             self.unit = unit
 
-        if ind is None:
-            raise ValueError(
-                "For the correct operation of the program, each PhaseSlip "
-                "element must have a parallel inductor (ind=...)."
-            )
-        else:
-            self.ind = ind
-
     def value(self) -> float:
         """
-        Return the value of the PhaseSlip element in the main frequency unit (GHz).
+        Return E_P in the main frequency unit (GHz by default).
         """
         pMean = self.pValue * unt.freq_list[self.unit] / unt.get_unit_freq()
         return pMean

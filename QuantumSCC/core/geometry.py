@@ -48,7 +48,7 @@ class Geometry:
                 omega_2B[i + self.topo.no_elements, i] = 0.5
 
             elif isinstance(elem[2], PhaseSlip):
-                # QPS has compact charge q_P ∈ S¹ → same sign convention as Capacitor
+                # QPS: one-island element, same sign convention as Capacitor
                 omega_2B[i, i + self.topo.no_elements] = -0.5
                 omega_2B[i + self.topo.no_elements, i] = 0.5
 

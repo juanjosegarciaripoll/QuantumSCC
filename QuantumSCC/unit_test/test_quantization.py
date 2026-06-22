@@ -26,8 +26,10 @@ from QuantumSCC.core.quantization import Quantization
 # Minimal input with one JJ and one QPS so every invariant is non-trivial.
 # Anonymous — no circuit architecture is implied.
 _T = Topology([
-    (0, 1, Junction(1, 'GHz', cap=Capacitor(1, 'GHz'))),
-    (1, 2, PhaseSlip(1, 'GHz', ind=Inductor(1, 'GHz'))),
+    (0, 1, Junction(1, 'GHz')),
+    (0, 1, Capacitor(1, 'GHz')),
+    (1, 2, PhaseSlip(1, 'GHz')),
+    (1, 2, Inductor(1, 'GHz')),
 ])
 _G = Geometry(_T)
 _Q = Quantization(_T, _G)

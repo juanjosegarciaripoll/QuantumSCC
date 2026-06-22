@@ -73,7 +73,9 @@ def build_symbolic_hamiltonian(topo, geom):
     n_jj  = topo.no_JJ
     n_qps = topo.no_QPS
 
-    # ── Build H_full = Σ_k 2·E_k · col_k col_k^T  (sympy, exact symbols) ──
+    # ── Build H_full = Σ_k (E_k/2) · col_k col_k^T  (Adrián convention) ──
+    # E_k symbols represent E_C = 4e²/C, E_L = (Φ₀/2π)²/L  (= 2·energy())
+    # so H = (E_C/2)·n² + (E_L/2)·φ² matches Adrián's notation.
     H_full   = sp.zeros(n_full, n_full)
     sym_vals = {}
     cap_idx  = 0
@@ -86,17 +88,17 @@ def build_symbolic_hamiltonian(topo, geom):
             ind_idx += 1
             name = 'E_L' if n_ind == 1 else f'E_L{ind_idx}'
             sym  = sp.Symbol(name, positive=True)
-            sym_vals[sym] = elem.energy()
+            sym_vals[sym] = 2 * elem.energy()   # E_L_Adrián = 2·E_L_code
             col = sp.Matrix([_to_sym(x) for x in VTK[:, i]])
-            H_full += 2 * sym * (col * col.T)
+            H_full += sym * sp.Rational(1, 2) * (col * col.T)
 
         elif isinstance(elem, Capacitor):
             cap_idx += 1
             name = 'E_C' if n_cap == 1 else f'E_C{cap_idx}'
             sym  = sp.Symbol(name, positive=True)
-            sym_vals[sym] = elem.energy()
+            sym_vals[sym] = 2 * elem.energy()   # E_C_Adrián = 2·E_C_code
             col = sp.Matrix([_to_sym(x) for x in VTK[:, i + no_elements]])
-            H_full += 2 * sym * (col * col.T)
+            H_full += sym * sp.Rational(1, 2) * (col * col.T)
 
     # ── Schur complement (mirrors classical_hamiltonian_function logic) ────
     has_charge_gauge = topo.kcut_suppressed
