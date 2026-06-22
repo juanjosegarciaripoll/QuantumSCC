@@ -382,8 +382,7 @@ class Quantization:
 
     def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9, verbose: bool = True):
         """
-        Print the Hamiltonian twice: first symbolically (E_C, E_L, E_J, E_P as symbols),
-        then numerically (current Hamiltonian_expression format).
+        Print the Hamiltonian symbolically (E_C, E_L, E_J, E_P as symbols).
 
         The symbolic form shows the pre-normal-mode Hamiltonian after the Schur complement
         (Eq. 18 of the paper), which is linear in the energy parameters.
@@ -479,7 +478,7 @@ class Quantization:
             if nCF > 0:
                 print(f'  φ_c{{k}}  compact flux      (JJ sector, periodic S¹)  — conjugate: n_c')
             if nCC > 0:
-                print(f'  ψ_c{{k}}  compact flux      (QPS sector, conjugate to q_c) — energy: 2·E_L·ψ_c²')
+                print(f'  ψ_c{{k}}  compact flux      (QPS sector, conjugate to q_c) — energy: E_L·ψ_c²')
             if nEF > 0:
                 print(f'  φ_e{{k}}  extended flux     (oscillator modes, ℝ)')
             if nCF > 0:
@@ -548,24 +547,63 @@ class Quantization:
         print('----------------------------------------------------------------------')
 
         # Print the  Hamiltonian
-        print(f'Quantum Hamiltonian:')
+        print(f'Numerical Hamiltonian:')
         print(f'H/ℏ (GHz) =', end=" ")
 
-        # Print the extended Hamiltonian (pure oscillator modes only)
-        for i in range(no_compact_fluxes + no_compact_charges, no_flux_variables):
-            if np.abs(quantum_quadratic_hamiltonian[i,i]) > 1e-14:
-                print(f'+ {quantum_quadratic_hamiltonian[i,i]:.{precision}f} [(\u03D5_e{i-no_compact_fluxes+1})^2 + (n_e{i-no_compact_fluxes+1})^2]', end=" ")
-        
-        # Print interaction Hamiltonian
-        for i in range(no_flux_variables, 2*no_flux_variables):
-            for j in range(no_flux_variables, 2*no_flux_variables):
-                if np.abs(quantum_quadratic_hamiltonian[i,j]) > 1e-14 and i > j:
-                    print(f' + {(2 * quantum_quadratic_hamiltonian[i,j]):.{precision}f} n_e{i-no_flux_variables-no_compact_fluxes+1} n_c{j-no_flux_variables+1}', end=" ")
+        # --- Variable naming helper (matches symbolic Hamiltonian names) ---
+        nCF = no_compact_fluxes
+        nCC = no_compact_charges
+        nF  = no_flux_variables
 
-        # Print non-linear Hamiltonian
-        for i in range(no_compact_fluxes):
-            if np.abs(quantum_quadratic_hamiltonian[i+no_flux_variables, i+no_flux_variables]) > 1e-14:
-                print(f' + {quantum_quadratic_hamiltonian[i+no_flux_variables,i+no_flux_variables]:.{precision}f} (n_c{i+1})^2', end=" ")
+        def _var_label(i):
+            """Map matrix index to canonical variable name."""
+            if i < nCF:
+                return f'\u03D5_c{i+1}'            # ϕ_c  compact JJ flux
+            elif i < nCF + nCC:
+                return f'\u03C8_c{i-nCF+1}'        # ψ_c  QPS-conjugate flux
+            elif i < nF:
+                return f'\u03D5_e{i-nCF-nCC+1}'    # ϕ_e  extended flux
+            elif i < nF + nCF:
+                return f'n_c{i-nF+1}'              # n_c  JJ-conjugate charge
+            elif i < nF + nCF + nCC:
+                return f'q_c{i-nF-nCF+1}'          # q_c  QPS compact charge
+            else:
+                return f'n_e{i-nF-nCF-nCC+1}'      # n_e  extended charge
+
+        # Print the extended Hamiltonian (pure oscillator modes only)
+        for i in range(nCF + nCC, nF):
+            if np.abs(quantum_quadratic_hamiltonian[i,i]) > 1e-14:
+                k = i - nCF - nCC + 1
+                print(f'+ {quantum_quadratic_hamiltonian[i,i]:.{precision}f} [(\u03D5_e{k})^2 + (n_e{k})^2]', end=" ")
+
+        # Print QPS-conjugate flux quadratic terms (ψ_c: flux paired with compact charge)
+        # Display H coefficient = M_ii/2 (internal matrix M uses H = ½ξᵀMξ convention)
+        for i in range(nCF, nCF + nCC):
+            if np.abs(quantum_quadratic_hamiltonian[i,i]) > 1e-14:
+                print(f' + {quantum_quadratic_hamiltonian[i,i] / 2:.{precision}f} (\u03C8_c{i-nCF+1})^2', end=" ")
+
+        # Print compact flux diagonal terms (ϕ_c: JJ compact flux)
+        for i in range(nCF):
+            if np.abs(quantum_quadratic_hamiltonian[i,i]) > tol:
+                print(f' + {quantum_quadratic_hamiltonian[i,i] / 2:.{precision}f} (\u03D5_c{i+1})^2', end=" ")
+
+        # Print off-diagonal flux-flux coupling terms
+        # H coefficient for off-diagonal: M_ij (symmetric matrix contributes M_ij·x_i·x_j)
+        for i in range(nF):
+            for j in range(i):
+                if np.abs(quantum_quadratic_hamiltonian[i,j]) > tol:
+                    print(f' + {quantum_quadratic_hamiltonian[i,j]:.{precision}f} {_var_label(i)} {_var_label(j)}', end=" ")
+
+        # Print off-diagonal charge-charge coupling terms
+        for i in range(nF, 2*nF):
+            for j in range(nF, i):
+                if np.abs(quantum_quadratic_hamiltonian[i,j]) > tol:
+                    print(f' + {quantum_quadratic_hamiltonian[i,j]:.{precision}f} {_var_label(i)} {_var_label(j)}', end=" ")
+
+        # Print JJ-conjugate charge quadratic terms (n_c: charging energy)
+        for i in range(nCF):
+            if np.abs(quantum_quadratic_hamiltonian[i+nF, i+nF]) > 1e-14:
+                print(f' + {quantum_quadratic_hamiltonian[i+nF,i+nF] / 2:.{precision}f} (n_c{i+1})^2', end=" ")
 
         # Collect JJ energies
         junction_energy = []
@@ -612,31 +650,30 @@ class Quantization:
 
             print(f'Flux-charge variable vector \u03BE\u03C6:')
             print(f'\u03BE\u03C6\u1D40 = (', end=" ")
-            for i in range(2*no_flux_variables):
-                if i < no_compact_fluxes:
-                    print(f'\u03D5_c{i+1}', end=" ")
-                elif no_compact_fluxes <= i < no_flux_variables:
-                    print(f' \u03D5_e{i-no_compact_fluxes+1}', end=" ")
-                elif no_flux_variables <= i < no_flux_variables + no_compact_fluxes:
-                    print(f' n_c{i-no_flux_variables+1}', end=" ")
-                elif no_flux_variables + no_compact_fluxes <= i <= 2*no_flux_variables-1:
-                    print(f' n_e{i-no_compact_fluxes-no_flux_variables+1}', end=" ")
+            for i in range(2*nF):
+                print(f' {_var_label(i)}', end=" ")
             print(f')')
 
             if no_QPS > 0:
                 print(f'')
                 print(f'Charge variable vector \u03BEq (QPS sector):')
                 print(f'\u03BEq\u1D40 = (', end=" ")
-                for i in range(no_compact_charges):
+                for i in range(nCC):
                     print(f' q_c{i+1}', end=" ")
-                for i in range(no_flux_variables - no_compact_fluxes):
-                    print(f' \u03C6_e{i+1}', end=" ")
+                for i in range(nCC):
+                    print(f' \u03C8_c{i+1}', end=" ")
+                nEF = nF - nCF - nCC
+                for i in range(nEF):
+                    print(f' \u03D5_e{i+1}', end=" ")
                 print(f')')
 
             print(f'')
             print(f'Operator subscripts explanation:')
-            print(f' - Subindex e: extended subspace (oscillator modes)')
-            print(f' - Subindex c: compact subspace (JJ flux / QPS charge)')
+            print(f' - \u03D5_c: compact flux (JJ phase, periodic S\u00B9)')
+            print(f' - \u03C8_c: QPS-conjugate flux (paired with compact charge q_c)')
+            print(f' - \u03D5_e, n_e: extended oscillator modes (\u211D)')
+            print(f' - n_c: JJ-conjugate charge (Cooper pair number)')
+            print(f' - q_c: compact charge (QPS, periodic S\u00B9)')
             print('')
             print(f'Relation between number-phase operators and flux-charge operators:')
             print(f' - n = Q/(2e)')

@@ -122,7 +122,7 @@ class Circuit:
 
     def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9, verbose: bool = True):
         """[Terminal + Jupyter] Print the Hamiltonian with symbolic energy parameters
-        (E_C, E_L, E_J, E_P).
+        (E_C, E_L, E_J, E_P) in reduced Darboux variables.
         verbose=True (default): adds variable legend, parameter values, and full numerical Hamiltonian.
         verbose=False: only the H/ℏ = ... symbolic expression line.
 
