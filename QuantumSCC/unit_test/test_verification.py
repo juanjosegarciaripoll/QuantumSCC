@@ -84,9 +84,11 @@ class TestLCQPSCoupledInvariants:
     def test_reduced_compact_charge_one(self):
         assert self.circ.no_reduced_compact_charge == 1
 
-    def test_kcut_not_suppressed(self):
-        """Cap is on a different branch from QPS — no cap-parallel suppression."""
-        assert self.circ.kcut_suppressed is False
+    def test_no_cap_parallel_qps(self):
+        """Cap is on a different branch from QPS — no Cap||QPS conflict."""
+        # The circuit builds successfully (no ValueError), confirming
+        # Cap on (0,1) and QPS on (1,2) are on different node pairs.
+        assert self.circ.no_reduced_compact_charge == 1
 
     # -- coupling vectors -------------------------------------------------------
 

@@ -323,14 +323,14 @@ class TestQPSJJDuality(unittest.TestCase):
 class TestCircuitErrors(unittest.TestCase):
     """Circuit-level error handling (cases that require building a Circuit)."""
 
-    def test_jj_and_qps_in_parallel_builds(self):
-        """JJ + C + QPS + L on the same nodes: must not raise."""
+    def test_jj_and_qps_in_parallel_raises(self):
+        """JJ + C + QPS + L on the same nodes: Cap||QPS must raise."""
         J = Junction(value=1, unit='GHz')
         C = Capacitor(value=1, unit='pF')
         P = PhaseSlip(value=1, unit='GHz')
         L = Inductor(value=1, unit='nH')
-        circuit = Circuit([(0, 1, J), (0, 1, C), (0, 1, P), (0, 1, L)])
-        self.assertIsNotNone(circuit.quadratic_hamiltonian)
+        with self.assertRaises(ValueError):
+            Circuit([(0, 1, J), (0, 1, C), (0, 1, P), (0, 1, L)])
 
 
 # ── Backwards compatibility ───────────────────────────────────────────────────
@@ -467,11 +467,11 @@ class TestTopologyEdgeCases(unittest.TestCase):
                          (0, 1, Inductor(1, 'GHz'))])
         self.assertEqual(topo.no_reduced_compact_flux, 0)
 
-    def test_parallel_capacitor_kills_compact_charge(self):
-        """Dual-fluxonium (QPS + L + C): capacitor extends the QPS charge → nCC = 0."""
-        topo = Topology([(0, 1, PhaseSlip(1, 'GHz')), (0, 1, Inductor(1, 'GHz')),
-                         (0, 1, Capacitor(1, 'GHz'))])
-        self.assertEqual(topo.no_reduced_compact_charge, 0)
+    def test_parallel_capacitor_on_qps_raises(self):
+        """Dual-fluxonium (QPS + L + C): Cap||QPS on same nodes must raise."""
+        with self.assertRaises(ValueError):
+            Topology([(0, 1, PhaseSlip(1, 'GHz')), (0, 1, Inductor(1, 'GHz')),
+                      (0, 1, Capacitor(1, 'GHz'))])
 
     def test_element_ordering_jj_before_cap(self):
         """In element list, Junction (group 0) must appear before Capacitor (group 1)."""
@@ -532,13 +532,11 @@ class TestGeometryModeCounts(unittest.TestCase):
         self.assertEqual(geom.no_final_compact_charge,  0)
         self.assertEqual(geom.no_independent_variables, 2)
 
-    def test_dual_fluxonium_one_harmonic_mode(self):
-        """Dual-fluxonium (QPS + L + C) → capacitor extends charge → 1 harmonic mode, 0 compact."""
-        geom = self._geom([(0, 1, PhaseSlip(1, 'GHz')), (0, 1, Inductor(1, 'GHz')),
-                           (0, 1, Capacitor(1, 'GHz'))])
-        self.assertEqual(geom.no_final_compact_charge,  0)
-        self.assertEqual(geom.no_final_compact_flux,    0)
-        self.assertEqual(geom.no_independent_variables, 2)
+    def test_dual_fluxonium_raises(self):
+        """Dual-fluxonium (QPS + L + C) → Cap||QPS on same nodes must raise."""
+        with self.assertRaises(ValueError):
+            self._geom([(0, 1, PhaseSlip(1, 'GHz')), (0, 1, Inductor(1, 'GHz')),
+                        (0, 1, Capacitor(1, 'GHz'))])
 
     def test_two_jj_series_two_compact_flux(self):
         """Two JJ in series → 2 independent compact flux modes."""
@@ -650,15 +648,10 @@ class TestQPSRegressions(unittest.TestCase):
     Updated for the new API where C and L are explicit user-provided elements.
     """
 
-    def test_jj_qps_same_nodes_nCF_zero(self):
-        """JJ + C + QPS + L on same nodes: inductor extends JJ flux → nCF = 0."""
-        c = Circuit([(0, 1, _J()), (0, 1, _C()), (0, 1, _P()), (0, 1, _L())])
-        self.assertEqual(c.topo.no_reduced_compact_flux, 0)
-
-    def test_jj_qps_same_nodes_nCC(self):
-        """JJ + C + QPS + L on same nodes: Cap suppresses compact charge → nCC = 0."""
-        c = Circuit([(0, 1, _J()), (0, 1, _C()), (0, 1, _P()), (0, 1, _L())])
-        self.assertEqual(c.topo.no_reduced_compact_charge, 0)
+    def test_jj_qps_same_nodes_cap_parallel_raises(self):
+        """JJ + C + QPS + L on same nodes: Cap||QPS must raise."""
+        with self.assertRaises(ValueError):
+            Circuit([(0, 1, _J()), (0, 1, _C()), (0, 1, _P()), (0, 1, _L())])
 
     def test_jj_qps_chain_nCF_one(self):
         """JJ + C on (0,1), QPS + L on (1,2): nCF = 1."""
@@ -670,12 +663,11 @@ class TestQPSRegressions(unittest.TestCase):
         c = Circuit([(0, 1, _J()), (0, 1, _C()), (1, 2, _P()), (1, 2, _L())])
         self.assertEqual(c.topo.no_reduced_compact_charge, 1)
 
-    def test_2jj_qps_shared_node(self):
-        """2JJ + QPS shared node: QPS charge vector non-zero."""
-        c = Circuit([(0, 1, _J()), (0, 1, _C()), (1, 2, _J()), (1, 2, _C()),
+    def test_2jj_qps_shared_node_raises(self):
+        """2JJ + QPS shared node: Cap(0,1)||QPS(0,1) must raise."""
+        with self.assertRaises(ValueError):
+            Circuit([(0, 1, _J()), (0, 1, _C()), (1, 2, _J()), (1, 2, _C()),
                      (0, 1, _P()), (0, 1, _L())])
-        # Cap on (0,1) same as QPS on (0,1) → kcut_suppressed
-        self.assertEqual(c.topo.no_reduced_compact_charge, 0)
 
     def test_jj_jj_qps_ring(self):
         """JJ-JJ-QPS ring: all on different node pairs."""
@@ -702,11 +694,10 @@ class TestDualmonCircuits(unittest.TestCase):
         self.assertEqual(c.no_final_compact_charge, 0)
         self.assertTrue(np.allclose(c.quadratic_hamiltonian, 0))
 
-    def test_dualmon_gate_constructs(self):
-        """Dualmon + gate capacitor (JJ + QPS + C) constructs."""
-        c = Circuit([(0, 1, _J()), (0, 1, _P()), (0, 1, _C())])
-        self.assertEqual(c.no_final_compact_flux, 0)
-        self.assertEqual(c.no_final_compact_charge, 0)
+    def test_dualmon_gate_raises(self):
+        """Dualmon + gate capacitor (JJ + QPS + C): Cap||QPS must raise."""
+        with self.assertRaises(ValueError):
+            Circuit([(0, 1, _J()), (0, 1, _P()), (0, 1, _C())])
 
     def test_dualmon_full_constructs(self):
         """Full dualmon (JJ+C on one node, L series, QPS on other) constructs."""

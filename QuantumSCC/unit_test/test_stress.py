@@ -278,26 +278,10 @@ def test_dual_transmon_hamiltonian(E_P, E_L):
 #          10 tests
 # ============================================================================
 
-DUAL_FLUX_PARAMS = [
-    (5, 1, 1), (10, 2, 0.5), (1, 3, 0.5), (20, 0.5, 2),
-    (3, 3, 3), (50, 0.1, 5), (0.5, 0.5, 0.5), (15, 5, 1.5),
-    (8, 0.8, 0.8), (100, 10, 0.01),
-]
-
-@pytest.mark.parametrize("E_P,E_L,E_C", DUAL_FLUX_PARAMS,
-    ids=[f"EP{a}_EL{b}_EC{c}" for a, b, c in DUAL_FLUX_PARAMS])
-def test_dual_fluxonium_frequency(E_P, E_L, E_C):
-    """Dual fluxonium: capacitor kills compact charge → ω = 2√(E_C·E_L)."""
-    circ = Circuit([(0, 1, _P(E_P)), (0, 1, _L(E_L)), (0, 1, _C(E_C))])
-    assert_invariants(circ)
-
-    omega = circ.extended_quantum_hamiltonian.real[0, 0]
-    expected = lc_freq(E_C, E_L)
-    assert np.allclose(omega, expected, rtol=1e-6), \
-        f"code={omega:.6f}, analytical={expected:.6f}"
-    assert circ.no_final_compact_flux == 0
-    assert circ.no_final_compact_charge == 0
-    assert circ.vector_QPS.shape[1] == 1
+def test_dual_fluxonium_cap_parallel_qps_raises():
+    """Dual fluxonium (QPS+L+C on same nodes): Cap||QPS must raise."""
+    with pytest.raises(ValueError, match="Capacitor in parallel with PhaseSlip"):
+        Circuit([(0, 1, _P(5)), (0, 1, _L(1)), (0, 1, _C(1))])
 
 
 # ============================================================================
@@ -384,26 +368,10 @@ def test_transmon_duality(E_val, E_nonlin):
     assert np.allclose(H_d[0, 0], 2 * E_val, rtol=1e-6)
 
 
-@pytest.mark.parametrize("E_val,E_nonlin", DUALITY_PARAMS,
-    ids=[f"E{a}_Enl{b}" for a, b in DUALITY_PARAMS])
-def test_fluxonium_duality(E_val, E_nonlin):
-    """Fluxonium ↔ dual fluxonium: both 0 compact modes, same ω."""
-    flux = Circuit([(0, 1, _J(E_nonlin)), (0, 1, _C(E_val)), (0, 1, _L(E_val))])
-    dual = Circuit([(0, 1, _P(E_nonlin)), (0, 1, _L(E_val)), (0, 1, _C(E_val))])
-    assert_invariants(flux)
-    assert_invariants(dual)
-
-    assert flux.no_final_compact_flux == 0
-    assert flux.no_final_compact_charge == 0
-    assert dual.no_final_compact_flux == 0
-    assert dual.no_final_compact_charge == 0
-
-    # Both have ω = 2√(E_val²) = 2·E_val
-    expected = 2.0 * E_val
-    w_flux = flux.extended_quantum_hamiltonian.real[0, 0]
-    w_dual = dual.extended_quantum_hamiltonian.real[0, 0]
-    assert np.allclose(w_flux, expected, rtol=1e-6)
-    assert np.allclose(w_dual, expected, rtol=1e-6)
+def test_fluxonium_dual_raises():
+    """Dual fluxonium (QPS+L+C on same nodes): Cap||QPS must raise."""
+    with pytest.raises(ValueError, match="Capacitor in parallel with PhaseSlip"):
+        Circuit([(0, 1, _P(5)), (0, 1, _L(1)), (0, 1, _C(1))])
 
 
 # ============================================================================
@@ -509,13 +477,10 @@ COMPLEX_CIRCUITS = [
     ("2QPS_series",
      [(0, 1, _P(5)), (0, 1, _L(1)), (1, 2, _P(3)), (1, 2, _L(2)),
       (0, 2, _L(0.5))]),
-    ("JJ_QPS_same",
-     [(0, 1, _J(5)), (0, 1, _C(1)), (0, 1, _P(3)), (0, 1, _L(2))]),
+    # JJ_QPS_same removed: Cap||QPS on same nodes is now an error.
     ("JJ_QPS_chain",
      [(0, 1, _J(5)), (0, 1, _C(1)), (1, 2, _P(3)), (1, 2, _L(2))]),
-    ("2JJ_QPS_shared",
-     [(0, 1, _J(5)), (0, 1, _C(1)), (1, 2, _J(3)), (1, 2, _C(2)),
-      (0, 1, _P(7)), (0, 1, _L(0.5))]),
+    # 2JJ_QPS_shared removed: Cap(0,1)||QPS(0,1) on same nodes is now an error.
     ("JJ_QPS_JJ_chain",
      [(0, 1, _J(5)), (0, 1, _C(1)), (1, 2, _P(3)), (1, 2, _L(2)),
       (2, 3, _J(7)), (2, 3, _C(0.5))]),

@@ -143,17 +143,33 @@ class Topology:
                   f"QPS: {self.no_QPS}, Inds: {self.no_Inductors}, Total: {self.no_elements}")
 
         # Collect node pairs of Capacitor elements.
-        # Used to detect QPS shunted by a capacitor → suppresses compact charge.
         self.cap_node_pairs = set()
         for a, b, elt in elements_list:
             if isinstance(elt, Capacitor):
                 pair = frozenset([self.node_dictionary[a], self.node_dictionary[b]])
                 self.cap_node_pairs.add(pair)
 
+        # Validate: no Capacitor in parallel with a PhaseSlip on the same nodes.
+        # A parallel capacitor cancels the QPS contribution to the symplectic form ω,
+        # making the QPS charge a gauge variable (constant of motion).  The QPS
+        # cos(q) becomes a constant energy offset with no dynamical effect.
+        # This configuration is not physically meaningful for circuit quantization.
+        for a, b, elt in elements_list:
+            if isinstance(elt, PhaseSlip):
+                qps_pair = frozenset([self.node_dictionary[a], self.node_dictionary[b]])
+                if qps_pair in self.cap_node_pairs:
+                    raise ValueError(
+                        f"Capacitor in parallel with PhaseSlip on nodes "
+                        f"{set(qps_pair)} is not supported. A parallel capacitor "
+                        f"cancels the QPS contribution to the symplectic form, "
+                        f"making the QPS charge a gauge variable (dynamically "
+                        f"irrelevant). Remove the capacitor or the PhaseSlip."
+                    )
+
         # Run Kirchhoff analysis
         (self.Fcut, self.Floop, self.F, self.K,
-         self.no_reduced_compact_flux, self.no_reduced_compact_charge,
-         self.kcut_suppressed) = self.Kirchhoff()
+         self.no_reduced_compact_flux,
+         self.no_reduced_compact_charge) = self.Kirchhoff()
 
     def Kirchhoff(self):
         """
@@ -302,47 +318,8 @@ class Topology:
 
         no_reduced_compact_charge = Kcut_compact.shape[1]
 
-        # Suppress compact charge modes that involve a QPS shunted by a parallel capacitor.
-        # A parallel capacitor provides a continuous charge shunt, extending that
-        # charge mode from S¹ to ℝ.
-        #
-        # The check is per null-space vector of D_cut, not per QPS node pair:
-        # a null vector (compact charge mode) is suppressed if ANY of its nonzero
-        # QPS components corresponds to a QPS with a parallel capacitor.
-        # This correctly handles rings where KCL links QPS charges (the suppression
-        # propagates through the shared null vector) while leaving independent QPS
-        # modes in separate loops unaffected.
-        kcut_suppressed = False
-        if no_reduced_compact_charge > 0 and no_qps_groups > 0:
-            # For each QPS element, check if its node pair has a parallel capacitor.
-            has_cap = np.array([
-                frozenset([self.elements[qps_start + i][0], self.elements[qps_start + i][1]])
-                in self.cap_node_pairs
-                for i in range(self.no_QPS)
-            ])
-
-            # K_D_cut rows: [QPS (no_QPS) | Ind (no_Ind)].
-            # A null vector column is suppressed if any cap-parallel QPS row is nonzero.
-            qps_rows = K_D_cut[:self.no_QPS, :]  # shape (no_QPS, n_null)
-            pure_cols = [
-                col for col in range(K_D_cut.shape[1])
-                if not np.any(has_cap & (np.abs(qps_rows[:, col]) > 1e-12))
-            ]
-
-            if len(pure_cols) < K_D_cut.shape[1]:
-                if len(pure_cols) == 0:
-                    # All compact charge modes involve a cap-shunted QPS → fully suppressed.
-                    no_reduced_compact_charge = 0
-                    Kcut_compact = np.zeros((self.no_elements, 0))
-                    kcut_suppressed = True
-                else:
-                    # Keep only the pure (non-suppressed) charge modes.
-                    K_D_cut = K_D_cut[:, pure_cols]
-                    Kcut_compact = np.vstack((
-                        np.zeros((no_two_island, K_D_cut.shape[1])),
-                        K_D_cut,
-                    ))
-                    no_reduced_compact_charge = K_D_cut.shape[1]
+        # Note: Cap||QPS validation is done in __init__ before Kirchhoff() runs.
+        # No kcut_suppressed handling needed here.
 
         # Extended charge directions: from Floop.T
         Kcut_extended = Floop.T
@@ -383,7 +360,7 @@ class Topology:
         self.D_cut  = D_cut    # Fcut[:, one-island]   — ker → compact charge
 
         return (Fcut, Floop, F, K, no_reduced_compact_flux,
-                no_reduced_compact_charge, kcut_suppressed)
+                no_reduced_compact_charge)
 
 
 def _independent_columns_ordered(M: np.ndarray, tol: float = 1e-12) -> np.ndarray:

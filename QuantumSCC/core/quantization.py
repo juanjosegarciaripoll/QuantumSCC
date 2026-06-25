@@ -69,14 +69,8 @@ class Quantization:
         # Calculate the quadratic energy function matrix after symplectic basis change
         quadratic_energy_symplectic_basis = self.geom.V.T @ quadratic_energy_after_Kirchhoff @ self.geom.V
 
-        # Determine whether charge-sector gauge variables are present.
-        # This happens exactly when a bare capacitor is in parallel with a QPS element
-        # (dual-fluxonium topology), making the QPS charge extended.  In this case
-        # topology.py sets kcut_suppressed=True during Kirchhoff() after detecting the
-        # parallel-capacitor suppression.  All other circuits (pure LC, star, coupled
-        # oscillator, JJ||QPS, etc.) have kcut_suppressed=False and must use the
-        # standard Schur complement to integrate out non-dynamical variables.
-        has_charge_gauge = self.topo.kcut_suppressed
+        # Note: Cap||QPS is now rejected at topology construction time.
+        # No special-casing needed for charge-sector gauge variables.
 
         # Construct the initial vectors of the Josephson Junction energy (flux sector)
         vector_JJ = np.empty((quadratic_energy.shape[0], 0))
@@ -136,15 +130,9 @@ class Quantization:
                         if np.allclose(vector_QPS[:no_indep, c], 0):
                             vector_QPS[:, c] = rep_vec
 
-        # Validate the QPS vector.
-        # When kcut_suppressed=True (capacitor in parallel with QPS), the QPS charge
-        # becomes a gauge variable (constant of motion, analogous to external flux in
-        # fluxonium).  Its cos(q) evaluates at the fixed gauge charge value — a constant
-        # energy offset with no dynamical effect.  Zero dynamical projection is expected.
-        #
-        # For other topologies, zero dynamical projection means the QPS is genuinely
-        # decoupled from the dynamics, which is an error.
-        if vector_QPS.shape[1] > 0 and not has_charge_gauge:
+        # Validate the QPS vector: zero dynamical projection means the QPS is
+        # fully decoupled from the dynamics, which is an error.
+        if vector_QPS.shape[1] > 0:
             no_indep = self.geom.no_independent_variables
             if np.allclose(vector_QPS[:no_indep, :], 0):
                 raise ValueError(
@@ -160,15 +148,9 @@ class Quantization:
             quadratic_hamiltonian = quadratic_energy_symplectic_basis
 
         # Otherwise the symplectic basis has more variables than independent ones.
-        # Two cases must be distinguished:
-        #
-        #   1. Charge-sector gauge variables (has_charge_gauge = True): extra columns of V
-        #      correspond to all-zero rows of omega_ns at index ≥ nF.  These are constants
-        #      of motion with no conjugate partner.  Restrict to the dynamical subspace (TEF_11).
-        #
-        #   2. Non-dynamical variables (has_charge_gauge = False): extra columns arise
-        #      from null-space completion (Block 3 in omega_symplectic_transformation).
-        #      These satisfy a genuine constraint dH/dw = 0; use the Schur complement.
+        # Extra columns arise from null-space completion (Block 3 in
+        # omega_symplectic_transformation).  These non-dynamical variables w
+        # satisfy dH/dw = 0; use the Schur complement to integrate them out.
         else:
             no_indep = self.geom.no_independent_variables
             TEF_11 = quadratic_energy_symplectic_basis[:no_indep, :no_indep]
@@ -178,15 +160,12 @@ class Quantization:
 
             assert np.allclose(TEF_12, TEF_21.T) == True, "There is an error in the decomposition of the total energy function matrix in blocks"
 
-            if has_charge_gauge:
-                quadratic_hamiltonian = TEF_11
-            else:
-                try:
-                    TEF_22_inv = pseudo_inv(TEF_22, tol = 1e-15)
-                except np.linalg.LinAlgError:
-                    raise ValueError("There is no solution for the equation dH/dw = 0. The circuit does not present Hamiltonian dynamics.")
+            try:
+                TEF_22_inv = pseudo_inv(TEF_22, tol = 1e-15)
+            except np.linalg.LinAlgError:
+                raise ValueError("There is no solution for the equation dH/dw = 0. The circuit does not present Hamiltonian dynamics.")
 
-                quadratic_hamiltonian = TEF_11 - TEF_12 @ TEF_22_inv @ TEF_21
+            quadratic_hamiltonian = TEF_11 - TEF_12 @ TEF_22_inv @ TEF_21
 
 
         # Verify the resulting quadratic Hamiltonian is block diagonal and symmetric.

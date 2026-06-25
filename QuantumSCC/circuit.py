@@ -53,7 +53,6 @@ class Circuit:
         self.K = self.topo.K
         self.no_reduced_compact_flux = self.topo.no_reduced_compact_flux
         self.no_reduced_compact_charge = self.topo.no_reduced_compact_charge
-        self.kcut_suppressed = self.topo.kcut_suppressed
 
         # 2. Geometrical Analysis (Symplectic Form)
         self.geom = Geometry(self.topo, debug=self.debug)

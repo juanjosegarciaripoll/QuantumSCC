@@ -101,75 +101,70 @@ def build_symbolic_hamiltonian(topo, geom):
             H_full += sym * sp.Rational(1, 2) * (col * col.T)
 
     # ── Schur complement (mirrors classical_hamiltonian_function logic) ────
-    has_charge_gauge = topo.kcut_suppressed
-
     if H_full.shape[0] == no_indep:
         H_sym = H_full
     else:
         TEF_11 = H_full[:no_indep, :no_indep]
-        if has_charge_gauge:
+        TEF_12  = H_full[:no_indep, no_indep:]
+        TEF_21  = H_full[no_indep:, :no_indep]
+        TEF_22  = H_full[no_indep:, no_indep:]
+
+        subs_num = {sym: float(val) for sym, val in sym_vals.items()}
+
+        def _num(M):
+            return np.array(
+                [[float(M[i, j].subs(subs_num)) for j in range(M.shape[1])]
+                 for i in range(M.shape[0])], dtype=float)
+
+        TEF_22_num = _num(TEF_22)
+        max_abs    = np.max(np.abs(TEF_22_num)) if TEF_22_num.size > 0 else 0.0
+        threshold  = max(max_abs * 1e-8, 1e-12)
+
+        # Step 1: remove pure-gauge rows (zero rows → rank-0 contribution)
+        nz = [i for i in range(TEF_22_num.shape[0])
+              if np.any(np.abs(TEF_22_num[i, :]) > threshold)]
+
+        if not nz:
             H_sym = TEF_11
         else:
-            TEF_12  = H_full[:no_indep, no_indep:]
-            TEF_21  = H_full[no_indep:, :no_indep]
-            TEF_22  = H_full[no_indep:, no_indep:]
+            T22_red_num = TEF_22_num[np.ix_(nz, nz)]
+            rank = np.linalg.matrix_rank(
+                T22_red_num,
+                tol=max(np.max(np.abs(T22_red_num)) * 1e-8, 1e-12))
 
-            subs_num = {sym: float(val) for sym, val in sym_vals.items()}
-
-            def _num(M):
-                return np.array(
-                    [[float(M[i, j].subs(subs_num)) for j in range(M.shape[1])]
-                     for i in range(M.shape[0])], dtype=float)
-
-            TEF_22_num = _num(TEF_22)
-            max_abs    = np.max(np.abs(TEF_22_num)) if TEF_22_num.size > 0 else 0.0
-            threshold  = max(max_abs * 1e-8, 1e-12)
-
-            # Step 1: remove pure-gauge rows (zero rows → rank-0 contribution)
-            nz = [i for i in range(TEF_22_num.shape[0])
-                  if np.any(np.abs(TEF_22_num[i, :]) > threshold)]
-
-            if not nz:
-                H_sym = TEF_11
+            if rank == T22_red_num.shape[0]:
+                # Full rank → exact symbolic inverse
+                T22_red = TEF_22[nz, :][:, nz]
+                T12_red = TEF_12[:, nz]
+                T21_red = TEF_21[nz, :]
+                H_sym = sp.expand(TEF_11 - T12_red * T22_red.inv() * T21_red)
             else:
-                T22_red_num = TEF_22_num[np.ix_(nz, nz)]
-                rank = np.linalg.matrix_rank(
-                    T22_red_num,
-                    tol=max(np.max(np.abs(T22_red_num)) * 1e-8, 1e-12))
+                # Rank-deficient → numerical Moore-Penrose pinv + symbolic reconstruction.
+                # The Schur correction is linear in energy params for physical circuits,
+                # so we reconstruct each entry as Σ_k ratio_k * E_k.
+                T22_pinv   = np.linalg.pinv(T22_red_num)
+                T12_num    = _num(TEF_12)[:, nz]
+                T21_num    = _num(TEF_21)[nz, :]
+                schur_num  = T12_num @ T22_pinv @ T21_num
 
-                if rank == T22_red_num.shape[0]:
-                    # Full rank → exact symbolic inverse
-                    T22_red = TEF_22[nz, :][:, nz]
-                    T12_red = TEF_12[:, nz]
-                    T21_red = TEF_21[nz, :]
-                    H_sym = sp.expand(TEF_11 - T12_red * T22_red.inv() * T21_red)
-                else:
-                    # Rank-deficient → numerical Moore-Penrose pinv + symbolic reconstruction.
-                    # The Schur correction is linear in energy params for physical circuits,
-                    # so we reconstruct each entry as Σ_k ratio_k * E_k.
-                    T22_pinv   = np.linalg.pinv(T22_red_num)
-                    T12_num    = _num(TEF_12)[:, nz]
-                    T21_num    = _num(TEF_21)[nz, :]
-                    schur_num  = T12_num @ T22_pinv @ T21_num
-
-                    schur_sym = sp.zeros(no_indep, no_indep)
-                    for i in range(no_indep):
-                        for j in range(no_indep):
-                            v = float(schur_num[i, j])
-                            if abs(v) < threshold:
+                schur_sym = sp.zeros(no_indep, no_indep)
+                for i in range(no_indep):
+                    for j in range(no_indep):
+                        v = float(schur_num[i, j])
+                        if abs(v) < threshold:
+                            continue
+                        entry_sym = sp.Integer(0)
+                        residual  = v
+                        for sym, sym_val in sym_vals.items():
+                            if abs(sym_val) < 1e-30 or abs(residual) < 1e-9:
                                 continue
-                            entry_sym = sp.Integer(0)
-                            residual  = v
-                            for sym, sym_val in sym_vals.items():
-                                if abs(sym_val) < 1e-30 or abs(residual) < 1e-9:
-                                    continue
-                                ratio_clean = _to_sym(residual / sym_val, tol=1e-6)
-                                if ratio_clean != 0:
-                                    entry_sym += ratio_clean * sym
-                                    residual  -= float(ratio_clean) * sym_val
-                            schur_sym[i, j] = entry_sym
+                            ratio_clean = _to_sym(residual / sym_val, tol=1e-6)
+                            if ratio_clean != 0:
+                                entry_sym += ratio_clean * sym
+                                residual  -= float(ratio_clean) * sym_val
+                        schur_sym[i, j] = entry_sym
 
-                    H_sym = sp.expand(TEF_11 - schur_sym)
+                H_sym = sp.expand(TEF_11 - schur_sym)
 
     # ── JJ and QPS symbols ─────────────────────────────────────────────────
     J_syms  = []

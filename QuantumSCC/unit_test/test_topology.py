@@ -73,8 +73,7 @@ _CIRCUITS = {
     'JJ+L': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz')),
              (0, 1, Inductor(1, 'GHz'))],
     'QPS': [(0, 1, PhaseSlip(1, 'GHz')), (0, 1, Inductor(1, 'GHz'))],
-    'JJ||QPS': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz')),
-                (0, 1, PhaseSlip(1, 'GHz')), (0, 1, Inductor(1, 'GHz'))],
+    # 'JJ||QPS' removed: Cap||QPS on same nodes is now an error.
     'JJ-QPS': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz')),
                (1, 2, PhaseSlip(1, 'GHz')), (1, 2, Inductor(1, 'GHz'))],
     '2JJ': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz')),

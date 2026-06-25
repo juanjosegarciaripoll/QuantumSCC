@@ -53,12 +53,12 @@ CIRCUIT_REGISTRY = [
     ("2JJ_parallel",       lambda: [(0, 1, _J()), (0, 1, _J()), (0, 1, _C()), (0, 1, _C())]),
     ("2JJ_series",         lambda: [(0, 1, _J()), (0, 1, _C()), (1, 2, _J()), (1, 2, _C()), (0, 2, _C())]),
     ("dual_transmon",      lambda: [(0, 1, _P()), (0, 1, _L())]),
-    ("dual_fluxonium",     lambda: [(0, 1, _P()), (0, 1, _L()), (0, 1, _C())]),
+    # dual_fluxonium removed: Cap||QPS on same nodes is now an error.
     ("2QPS_parallel",      lambda: [(0, 1, _P()), (0, 1, _P()), (0, 1, _L()), (0, 1, _L())]),
     ("2QPS_series",        lambda: [(0, 1, _P()), (0, 1, _L()), (1, 2, _P()), (1, 2, _L()), (0, 2, _L())]),
-    ("JJ_QPS_same_nodes",  lambda: [(0, 1, _J()), (0, 1, _C()), (0, 1, _P()), (0, 1, _L())]),
+    # JJ_QPS_same_nodes removed: Cap||QPS on same nodes is now an error.
     ("JJ_QPS_chain",       lambda: [(0, 1, _J()), (0, 1, _C()), (1, 2, _P()), (1, 2, _L())]),
-    ("2JJ_QPS_shared_node",lambda: [(0, 1, _J()), (0, 1, _C()), (1, 2, _J()), (1, 2, _C()), (0, 1, _P()), (0, 1, _L())]),
+    # 2JJ_QPS_shared_node removed: Cap(0,1)||QPS(0,1) on same nodes is now an error.
     ("JJ_QPS_JJ_chain",    lambda: [(0, 1, _J()), (0, 1, _C()), (1, 2, _P()), (1, 2, _L()), (2, 3, _J()), (2, 3, _C())]),
     ("JJ_JJ_QPS_ring",     lambda: [(0, 1, _J()), (0, 1, _C()), (1, 2, _J()), (1, 2, _C()), (2, 0, _P()), (2, 0, _L())]),
     ("QPS_QPS_JJ_ring",    lambda: [(0, 1, _P()), (0, 1, _L()), (1, 2, _P()), (1, 2, _L()), (2, 0, _J()), (2, 0, _C())]),
