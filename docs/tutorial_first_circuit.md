@@ -55,8 +55,9 @@ Units can be **physical** (Farads, Henries) or **energy** (GHz, MHz):
 | `Junction` | — | `'GHz'`, `'MHz'`, `'THz'` (as E_J) |
 | `PhaseSlip` | — | `'GHz'`, `'MHz'`, `'THz'` (as E_P) |
 
-`Junction` always requires a parallel capacitor (`cap=`).
-`PhaseSlip` always requires a parallel inductor (`ind=`).
+Each element is a **single branch**. Nonlinear elements (`Junction`, `PhaseSlip`)
+carry only their cosine energy. If you need a companion (capacitor for JJ,
+inductor for QPS), add it as a **separate branch** on the same nodes.
 
 ---
 
@@ -74,15 +75,15 @@ circuit = Circuit([(0, 1, L), (0, 1, C)])
 import numpy as np
 H = circuit.extended_quantum_hamiltonian
 omega = H[0, 0].real
-print(f"ω / 2π = {omega:.4f} GHz")  # → 31.6228 GHz  (= 1/√(LC) × 1e-9)
+print(f"omega / 2pi = {omega:.4f} GHz")  # -> 31.6228 GHz  (= 1/sqrt(LC) x 1e-9)
 ```
 
 **What you can read:**
 
 ```python
-circuit.quadratic_hamiltonian          # 2×2 numpy array: H_quadratic
+circuit.quadratic_hamiltonian          # 2x2 numpy array: H_quadratic
 circuit.extended_quantum_hamiltonian   # diagonal matrix of mode frequencies
-circuit.no_independent_variables       # 2 (one conjugate pair: φ, q)
+circuit.no_independent_variables       # 2 (one conjugate pair: phi, q)
 circuit.Hamiltonian_expression()       # prints a symbolic expression
 ```
 
@@ -90,23 +91,29 @@ circuit.Hamiltonian_expression()       # prints a symbolic expression
 
 ## Example 2 — Transmon (single Josephson junction)
 
+A transmon is a JJ shunted by a capacitor. Each is a separate branch
+on the same nodes:
+
 ```python
 C = Capacitor(value=70, unit='fF')
-J = Junction(value=13.4, unit='GHz', cap=C)
+J = Junction(value=13.4, unit='GHz')
 
-circuit = Circuit([(0, 1, J)])
+circuit = Circuit([
+    (0, 1, J),   # Josephson junction
+    (0, 1, C),   # parallel capacitor (shunt)
+])
 
 circuit.Hamiltonian_expression()
-# H/ℏ (GHz) = + 27.819 (n_c1)² − 13.400 cos(v_1 ξφ)
+# H/hbar (GHz) = + 27.819 (n_c1)^2 - 13.400 cos(v_1 xi_phi)
 ```
 
 The Hamiltonian has:
-- A quadratic charging term `4 E_C n²` (here `4 E_C ≈ 27.8 GHz`)
-- A nonlinear Josephson term `−E_J cos(φ_c)` where `φ_c` is the **compact flux**
+- A quadratic charging term `4 E_C n^2` (here `4 E_C ~ 27.8 GHz`)
+- A nonlinear Josephson term `-E_J cos(phi_c)` where `phi_c` is the **compact flux**
 
 ```python
 circuit.no_final_compact_flux    # 1 — one compact flux variable
-circuit.vector_JJ                # coupling vector for the cos(φ) term
+circuit.vector_JJ                # coupling vector for the cos(phi) term
 ```
 
 ---
@@ -119,17 +126,22 @@ This is the fluxonium qubit.
 
 ```python
 C = Capacitor(value=5,   unit='fF')
-J = Junction(value=8.0,  unit='GHz', cap=C)
+J = Junction(value=8.0,  unit='GHz')
 L = Inductor(value=400,  unit='nH')
 
-circuit = Circuit([(0, 1, J), (0, 1, L)])
+circuit = Circuit([
+    (0, 1, J),   # Josephson junction
+    (0, 1, C),   # parallel capacitor
+    (0, 1, L),   # parallel inductor (superinductor)
+])
 
 circuit.Hamiltonian_expression()
-# H/ℏ (GHz) = + 31.6 [(ϕ_e1)² + (n_e1)²] − 8.0 cos(v_1 ξφ)
+# H/hbar (GHz) = + 31.6 [(phi_e1)^2 + (n_e1)^2] - 8.0 cos(v_1 xi_phi)
 ```
 
-The `e` subscript means *extended*: `ϕ_e1` is an oscillator mode, not a
-compact variable. The quadratic part is now the harmonic oscillator term.
+The `e` subscript means *extended*: `phi_e1` is an oscillator mode, not a
+compact variable. The inductor kills the compact flux by adding a loop
+(see Eq. 42 in PRX 2025).
 
 ---
 
@@ -139,21 +151,21 @@ compact variable. The quadratic part is now the harmonic oscillator term.
 
 | Junction | PhaseSlip |
 |---|---|
-| Compact flux φ ∈ S¹ | Compact charge q ∈ S¹ |
-| Energy: −E_J cos(φ) | Energy: −E_P cos(q) |
+| Compact flux phi in S^1 | Compact charge q in S^1 |
+| Energy: -E_J cos(phi) | Energy: -E_P cos(q) |
 | Needs parallel capacitor | Needs parallel inductor |
 
 ```python
 L = Inductor(value=1,   unit='nH')
-P = PhaseSlip(value=5.0, unit='GHz', ind=L)
+P = PhaseSlip(value=5.0, unit='GHz')
 
-circuit = Circuit([(0, 1, P)])
+circuit = Circuit([
+    (0, 1, P),   # phase-slip element
+    (0, 1, L),   # parallel inductor (companion)
+])
 
 circuit.Hamiltonian_expression()
-# H/ℏ (GHz) = − 5.000 cos(u_1 ξq)
-#
-# QPS coupling vectors u (charge space):
-# u_1 = [ 0. -1.]
+# H/hbar (GHz) = + E_L (psi_c1)^2 - 5.000 cos(u_1 xi_q)
 
 circuit.no_final_compact_charge   # 1 — one compact charge variable
 circuit.vector_QPS                # coupling vector for the cos(q) term
@@ -163,20 +175,23 @@ circuit.vector_QPS                # coupling vector for the cos(q) term
 
 ## Example 5 — Mixed circuit: JJ + QPS chain
 
-JJ and QPS elements can coexist in the same circuit, on the same or
-different nodes.
+JJ and QPS elements can coexist in the same circuit, on **different** nodes.
 
 ```python
 C = Capacitor(value=1, unit='GHz')
-J = Junction(value=1,  unit='GHz', cap=C)
+J = Junction(value=1,  unit='GHz')
 L = Inductor(value=1,  unit='GHz')
-P = PhaseSlip(value=1, unit='GHz', ind=L)
+P = PhaseSlip(value=1, unit='GHz')
 
-# JJ on branch (0,1), QPS on branch (1,2)
-circuit = Circuit([(0, 1, J), (1, 2, P)])
+# JJ+C on branch (0,1), QPS+L on branch (1,2)
+circuit = Circuit([
+    (0, 1, J),
+    (0, 1, C),
+    (1, 2, P),
+    (1, 2, L),
+])
 
 circuit.Hamiltonian_expression()
-# H/ℏ (GHz) = + 4.0 (n_c1)² − 1.0 cos(v_1 ξφ) − 1.0 cos(u_1 ξq)
 
 circuit.no_final_compact_flux    # 1
 circuit.no_final_compact_charge  # 1
@@ -185,25 +200,27 @@ circuit.no_final_compact_charge  # 1
 Both the compact flux (from J) and the compact charge (from P) appear
 as independent nonlinear degrees of freedom.
 
+**Important:** Capacitor and PhaseSlip must NOT be on the same nodes.
+This creates a nonlinear KVL constraint (Kepler equation) that cannot
+be solved within the Faddeev-Jackiw framework.
+
 ---
 
 ## Example 6 — Multiple modes: 2 JJ in series
 
-Each branch adds independent degrees of freedom. Two junctions in series
-(with a closing capacitor) give two compact flux modes:
+Two junctions in series (with capacitors and a closing inductor) give
+multiple modes:
 
 ```python
-C = Capacitor(value=1, unit='GHz')
-J = Junction(value=1,  unit='GHz', cap=Capacitor(1,'GHz'))
-
 circuit = Circuit([
-    (0, 1, J),
-    (1, 2, J),
-    (0, 2, C),
+    (0, 1, Junction(1, 'GHz')),
+    (0, 1, Capacitor(1, 'GHz')),
+    (1, 2, Junction(1, 'GHz')),
+    (1, 2, Capacitor(1, 'GHz')),
+    (0, 2, Inductor(1, 'GHz')),
 ])
 
-circuit.quadratic_hamiltonian.shape   # (4, 4) — 2 modes × 2 variables each
-circuit.no_final_compact_flux         # 2
+circuit.quadratic_hamiltonian.shape   # (4, 4) — 2 modes x 2 variables each
 circuit.vector_JJ.shape               # (4, 2) — one column per junction
 ```
 
@@ -213,41 +230,52 @@ circuit.vector_JJ.shape               # (4, 2) — one column per junction
 
 | Attribute | Type | Description |
 |---|---|---|
-| `circuit.quadratic_hamiltonian` | `ndarray (n×n)` | Quadratic part of H (harmonic + zero-point) |
-| `circuit.extended_quantum_hamiltonian` | `ndarray (2k×2k)` | Diagonal: harmonic mode frequencies |
-| `circuit.vector_JJ` | `ndarray (n×nJJ)` | Coupling vectors for each junction's cos(φ) |
-| `circuit.vector_QPS` | `ndarray (n×nQPS)` | Coupling vectors for each phase-slip's cos(q) |
+| `circuit.quadratic_hamiltonian` | `ndarray (n x n)` | Quadratic part of H (pre-diagonalization) |
+| `circuit.extended_quantum_hamiltonian` | `ndarray (2k x 2k)` | Diagonal: harmonic mode frequencies |
+| `circuit.vector_JJ` | `ndarray (n x nJJ)` | Coupling vectors for each junction's cos(phi) |
+| `circuit.vector_QPS` | `ndarray (n x nQPS)` | Coupling vectors for each phase-slip's cos(q) |
 | `circuit.no_final_compact_flux` | `int` | Number of compact flux modes |
 | `circuit.no_final_compact_charge` | `int` | Number of compact charge modes |
-| `circuit.Hamiltonian_expression()` | `(prints)` | Symbolic Hamiltonian in GHz units |
-| `circuit.FS_quadratic_hamiltonian_phiq` | `ndarray` | H in the flux-charge (φ,q) basis |
-| `circuit.FS_quadratic_hamiltonian_an` | `ndarray` | H in the creation-annihilation (a†,a) basis |
+| `circuit.Hamiltonian_expression()` | `(prints)` | Numerical Hamiltonian in GHz units |
+| `circuit.symbolic_hamiltonian_expression()` | `(prints)` | Symbolic Hamiltonian with E_C, E_L, E_J |
+| `circuit.FS_quadratic_hamiltonian_phiq` | `ndarray` | H in the flux-charge (phi,q) basis |
+| `circuit.FS_quadratic_hamiltonian_an` | `ndarray` | H in the creation-annihilation (a+,a) basis |
 
 ---
 
 ## Common mistakes
 
-**1. Forgetting the parallel cap/inductor:**
+**1. Forgetting the companion element:**
 ```python
-Junction(value=10, unit='GHz')           # ← ValueError: cap= is required
-PhaseSlip(value=5, unit='GHz')           # ← ValueError: ind= is required
+# A bare Junction works (e.g., bare dualmon), but won't have
+# quadratic energy. For a transmon, add a Capacitor:
+J = Junction(value=10, unit='GHz')
+C = Capacitor(value=1, unit='pF')
+circuit = Circuit([(0, 1, J), (0, 1, C)])   # transmon
 ```
 
-**2. Wrong unit for Junction or PhaseSlip** (only frequency units are valid):
+**2. Capacitor on the same nodes as PhaseSlip:**
 ```python
-Junction(value=1, unit='pF', cap=...)    # ← ValueError: unit not correct
+# This raises ValueError — Kepler equation, not solvable:
+Circuit([(0, 1, PhaseSlip(5, 'GHz')), (0, 1, Capacitor(1, 'pF'))])
+# Solution: remove the capacitor, or add an inductor on those nodes
 ```
 
-**3. A circuit with no closed loop:**
+**3. Wrong unit for Junction or PhaseSlip** (only frequency units are valid):
 ```python
-Circuit([(0, 1, Capacitor(1,'pF'))])     # ← Kirchhoff error: no return path
+Junction(value=1, unit='pF')    # ValueError: unit not correct
 ```
-Every circuit needs at least one closed current path.
 
-**4. Reusing the same element object on multiple branches:**
+**4. A disconnected circuit:**
 ```python
-J = Junction(1, 'GHz', cap=Capacitor(1,'GHz'))
-Circuit([(0, 1, J), (0, 1, J)])   # ← same object twice — create two instances
+Circuit([(0, 1, Capacitor(1,'pF')), (2, 3, Inductor(1,'nH'))])
+# ValueError: disconnected circuit
+```
+
+**5. Reusing the same element object on multiple branches:**
+```python
+J = Junction(1, 'GHz')
+Circuit([(0, 1, J), (0, 1, J)])   # same object twice — create two instances
 ```
 Always instantiate a fresh element for each branch.
 
@@ -260,11 +288,15 @@ from QuantumSCC import Circuit, Capacitor, Inductor, Junction, PhaseSlip
 import numpy as np
 
 # Fluxonium: JJ shunted by a superinductor
-C_J = Capacitor(value=5,   unit='fF')
-J   = Junction(value=8.0,  unit='GHz', cap=C_J)
-L   = Inductor(value=400,  unit='nH')
+C = Capacitor(value=5,   unit='fF')
+J = Junction(value=8.0,  unit='GHz')
+L = Inductor(value=400,  unit='nH')
 
-circuit = Circuit([(0, 1, J), (0, 1, L)])
+circuit = Circuit([
+    (0, 1, J),   # Josephson junction
+    (0, 1, C),   # parallel capacitor
+    (0, 1, L),   # superinductor
+])
 
 print(f"Modes          : {circuit.no_independent_variables // 2}")
 print(f"Compact flux   : {circuit.no_final_compact_flux}")
@@ -279,8 +311,8 @@ Modes          : 1
 Compact flux   : 0
 Compact charge : 0
 
-Quantum Hamiltonian:
-H/ℏ (GHz) = + 31.6 [(ϕ_e1)² + (n_e1)²]  - 8.000 cos(v_1 ξφ)
+Numerical Hamiltonian:
+H/hbar (GHz) = + 31.6 [(phi_e1)^2 + (n_e1)^2]  - 8.000 cos(v_1 xi_phi)
 
 JJ coupling vectors v (flux space):
 v_1 = [-0.175  0.   ]

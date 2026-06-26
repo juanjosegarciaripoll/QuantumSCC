@@ -1,5 +1,5 @@
 """
-
+Circuit examples verification — Part 1: Linear and nonlinear circuits.
 """
 
 import sys, os
@@ -8,6 +8,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from QuantumSCC import Circuit, Capacitor, Inductor, Junction, PhaseSlip
 
 SEP = "\n" + "=" * 70
+
+
+def print_conjugate_pairs(circ):
+    """Print conjugate pairs using Circuit.conjugate_pairs()."""
+    pairs = circ.conjugate_pairs()
+    type_labels = {
+        'JJ_compact': 'JJ compact flux, integer charge',
+        'QPS_compact': 'QPS-inductor flux, compact charge',
+        'extended': 'extended oscillator mode',
+    }
+    print(f"  Conjugate pairs (braket order):  {len(pairs)} pair(s)")
+    for i, (flux, charge, ptype) in enumerate(pairs):
+        print(f"    pair {i+1}: ({flux}, {charge})   [{type_labels[ptype]}]")
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -20,6 +33,7 @@ c1 = Circuit([
     (0, 1, Capacitor(1.0)),
     (0, 1, Inductor(1.0)),
 ])
+print_conjugate_pairs(c1)
 c1.symbolic_hamiltonian_expression(verbose=False)
 c1.Hamiltonian_expression(verbose=False)
 
@@ -36,6 +50,7 @@ c2 = Circuit([
     (0, 1, Inductor(1.0)),
     (0, 1, Inductor(3.0)),
 ])
+print_conjugate_pairs(c2)
 c2.symbolic_hamiltonian_expression(verbose=False)
 c2.Hamiltonian_expression(verbose=False)
 
@@ -51,6 +66,7 @@ c3a = Circuit([
     (1, 2, Capacitor(3.0)),
     (0, 2, Inductor(1.0)),
 ])
+print_conjugate_pairs(c3a)
 c3a.symbolic_hamiltonian_expression(verbose=False)
 c3a.Hamiltonian_expression(verbose=False)
 
@@ -66,6 +82,7 @@ c3b = Circuit([
     (0, 1, Inductor(1.0)),
     (1, 2, Inductor(3.0)),
 ])
+print_conjugate_pairs(c3b)
 c3b.symbolic_hamiltonian_expression(verbose=False)
 c3b.Hamiltonian_expression(verbose=False)
 
@@ -82,6 +99,7 @@ c4s = Circuit([
     (2, 0, Capacitor(1.0)),
     (1, 2, Inductor(1.0)),
 ])
+print_conjugate_pairs(c4s)
 c4s.symbolic_hamiltonian_expression(verbose=False)
 c4s.Hamiltonian_expression(verbose=False)
 
@@ -100,6 +118,7 @@ c5 = Circuit([
     (1, 2, Inductor(1.0)),
     (1, 3, Inductor(1.0)),
 ])
+print_conjugate_pairs(c5)
 c5.symbolic_hamiltonian_expression(verbose=False)
 c5.Hamiltonian_expression(verbose=False)
 
@@ -118,6 +137,7 @@ cA = Circuit([
     (1, 3, Inductor(1.0)),
     (3, 2, Inductor(1.0)),
 ])
+print_conjugate_pairs(cA)
 cA.symbolic_hamiltonian_expression(verbose=False)
 cA.Hamiltonian_expression(verbose=False)
 
@@ -142,6 +162,7 @@ cB = Circuit([
     (0, 2, Capacitor(1.0)),
     (1, 2, Inductor(1.0)),
 ])
+print_conjugate_pairs(cB)
 cB.symbolic_hamiltonian_expression(verbose=False)
 cB.Hamiltonian_expression(verbose=False)
 
@@ -166,6 +187,7 @@ cB1 = Circuit([
     (0, 2, Capacitor(1.0)),
     (1, 2, Inductor(1.0)),
 ])
+print_conjugate_pairs(cB1)
 cB1.symbolic_hamiltonian_expression(verbose=False)
 cB1.Hamiltonian_expression(verbose=False)
 
@@ -190,6 +212,7 @@ cB2 = Circuit([
     (0, 2, Capacitor(1.0)),
     (1, 2, Capacitor(1.0)),
 ])
+print_conjugate_pairs(cB2)
 cB2.symbolic_hamiltonian_expression(verbose=False)
 cB2.Hamiltonian_expression(verbose=False)
 

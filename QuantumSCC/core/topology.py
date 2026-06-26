@@ -142,29 +142,78 @@ class Topology:
             print(f"Element Counts -> JJ: {self.no_JJ}, Caps: {self.no_Capacitors}, "
                   f"QPS: {self.no_QPS}, Inds: {self.no_Inductors}, Total: {self.no_elements}")
 
-        # Collect node pairs of Capacitor elements.
+        # Count elements per node pair for validation.
         self.cap_node_pairs = set()
+        pair_counts = {}
         for a, b, elt in elements_list:
-            if isinstance(elt, Capacitor):
-                pair = frozenset([self.node_dictionary[a], self.node_dictionary[b]])
+            pair = frozenset([self.node_dictionary[a], self.node_dictionary[b]])
+            if pair not in pair_counts:
+                pair_counts[pair] = {'JJ': 0, 'Cap': 0, 'QPS': 0, 'Ind': 0}
+            if isinstance(elt, Junction):
+                pair_counts[pair]['JJ'] += 1
+            elif isinstance(elt, Capacitor):
+                pair_counts[pair]['Cap'] += 1
                 self.cap_node_pairs.add(pair)
+            elif isinstance(elt, PhaseSlip):
+                pair_counts[pair]['QPS'] += 1
+            elif isinstance(elt, Inductor):
+                pair_counts[pair]['Ind'] += 1
 
-        # Validate: no Capacitor in parallel with a PhaseSlip on the same nodes.
-        # A parallel capacitor cancels the QPS contribution to the symplectic form ω,
-        # making the QPS charge a gauge variable (constant of motion).  The QPS
-        # cos(q) becomes a constant energy offset with no dynamical effect.
-        # This configuration is not physically meaningful for circuit quantization.
-        for a, b, elt in elements_list:
-            if isinstance(elt, PhaseSlip):
-                qps_pair = frozenset([self.node_dictionary[a], self.node_dictionary[b]])
-                if qps_pair in self.cap_node_pairs:
-                    raise ValueError(
-                        f"Capacitor in parallel with PhaseSlip on nodes "
-                        f"{set(qps_pair)} is not supported. A parallel capacitor "
-                        f"cancels the QPS contribution to the symplectic form, "
-                        f"making the QPS charge a gauge variable (dynamically "
-                        f"irrelevant). Remove the capacitor or the PhaseSlip."
-                    )
+        # Validate element balance per node pair.
+        #
+        # Each element contributes ±½ to the symplectic form ω:
+        #   flux-type (+½):   JJ, Ind
+        #   charge-type (−½): Cap, QPS
+        #
+        # On the same nodes, flux-type and charge-type pair up in ω.
+        # If there is an excess of nonlinear elements (JJ or QPS) beyond
+        # what their linear companions (Cap or Ind) can absorb, the excess
+        # cos() acts on a non-dynamical variable → nonlinear constraint
+        # (Kepler-type equation) that cannot be solved.
+        #
+        # Rule: each nonlinear element needs a linear companion of the
+        # OPPOSITE symplectic type on the same nodes:
+        #   JJ (+½) needs Cap (−½)
+        #   QPS (−½) needs Ind (+½)
+        # One nonlinear element can be "bare" (no companion), but two or
+        # more of the same type need one companion each.
+        for pair, counts in pair_counts.items():
+            nodes = set(pair)
+            n_jj  = counts['JJ']
+            n_cap = counts['Cap']
+            n_qps = counts['QPS']
+            n_ind = counts['Ind']
+
+            # Cap||QPS: both charge-type (−½), they compete for flux-type
+            # partners instead of pairing with each other.
+            if n_cap > 0 and n_qps > 0:
+                raise ValueError(
+                    f"Capacitor in parallel with PhaseSlip on nodes "
+                    f"{nodes} is not supported. This creates a "
+                    f"nonlinear KVL constraint that cannot be fulfilled "
+                    f"in general. Possible solutions: remove either the "
+                    f"capacitor or the PhaseSlip, or include an inductor "
+                    f"in the nonlinear capacitive loop."
+                )
+
+            # Excess QPS: N QPS need N inductors (1 bare QPS is OK).
+            if n_qps > 1 and n_ind < n_qps:
+                raise ValueError(
+                    f"Too many PhaseSlip elements ({n_qps}) on nodes "
+                    f"{nodes} with only {n_ind} inductor(s). Each QPS "
+                    f"needs a companion inductor. Add {n_qps - n_ind} "
+                    f"inductor(s) or remove excess PhaseSlip elements."
+                )
+
+            # Excess JJ: N JJ need N capacitors (1 bare JJ is OK).
+            # Dual of excess QPS.
+            if n_jj > 1 and n_cap < n_jj:
+                raise ValueError(
+                    f"Too many Junction elements ({n_jj}) on nodes "
+                    f"{nodes} with only {n_cap} capacitor(s). Each JJ "
+                    f"needs a companion capacitor. Add {n_jj - n_cap} "
+                    f"capacitor(s) or remove excess Junction elements."
+                )
 
         # Run Kirchhoff analysis
         (self.Fcut, self.Floop, self.F, self.K,

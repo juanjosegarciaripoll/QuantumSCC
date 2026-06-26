@@ -119,6 +119,29 @@ class Circuit:
         Works in both terminal scripts and Jupyter notebooks."""
         self.quant.Hamiltonian_expression(precision, tol, verbose)
 
+    def conjugate_pairs(self):
+        """Return the list of conjugate variable pairs in braket order.
+
+        Each pair is (flux_label, charge_label, pair_type) where pair_type
+        is 'JJ_compact', 'QPS_compact', or 'extended'.
+
+        The pairing comes from the Darboux transformation V^T omega V = J:
+        flux variable at index i is conjugate to charge variable at index i.
+        """
+        nCF = self.no_final_compact_flux
+        nCC = self.no_final_compact_charge
+        nF = self.no_independent_variables // 2
+        nEF = nF - nCF - nCC
+
+        pairs = []
+        for k in range(nCF):
+            pairs.append((f'phi_c{k+1}', f'n_c{k+1}', 'JJ_compact'))
+        for k in range(nCC):
+            pairs.append((f'psi_c{k+1}', f'q_c{k+1}', 'QPS_compact'))
+        for k in range(nEF):
+            pairs.append((f'phi_e{k+1}', f'n_e{k+1}', 'extended'))
+        return pairs
+
     def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9, verbose: bool = True):
         """[Terminal + Jupyter] Print the Hamiltonian with symbolic energy parameters
         (E_C, E_L, E_J, E_P) in reduced Darboux variables.
