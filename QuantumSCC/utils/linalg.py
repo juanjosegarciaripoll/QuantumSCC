@@ -209,10 +209,12 @@ def pseudo_inv(M: Matrix, tol: float=1e-15):
     # SVD decomposition
     U, S, Vt = np.linalg.svd(M)
     
-    # Invert the singular values taking into account the tolerance
+    # Invert the singular values taking into account the tolerance,
+    # scaled by the largest singular value (as in numpy.linalg.pinv)
+    cutoff = max(tol, 1e-9 * S[0]) if len(S) > 0 else tol
     S_inv = np.zeros((Vt.shape[0], U.shape[1]))  # Preallocate S_inv matrix with correct dimensions
     for i in range(len(S)):
-        if np.abs(S[i]) > tol:  # Invert only if the singular value is bigger than the tolerance
+        if np.abs(S[i]) > cutoff:  # Invert only if the singular value is bigger than the cutoff
             S_inv[i, i] = 1 / S[i]
     
     # Get the pseudo-inverse
@@ -708,13 +710,18 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
     zero_eigval, zero_eigvec = np.empty(0), np.empty((M.shape[1], 0))
     imag_eigval, imag_eigvec = np.empty(0), np.empty((M.shape[1], 0))
 
+    # Scale the zero-classification threshold by the largest eigenvalue magnitude,
+    # consistent with the atol=1e-4 choice in quantization.py for has_oscillators.
+    max_eigval = np.max(np.abs(M_eigval)) if len(M_eigval) > 0 else 1.0
+    eigval_atol = max(1e-8, 1e-4 * max_eigval)
+
     for i, eigval in enumerate(M_eigval):
 
-        if np.allclose(eigval.real, 0) and np.allclose(eigval.imag, 0):
-            zero_eigval = np.hstack((zero_eigval, 0)) 
+        if np.abs(eigval.real) < eigval_atol and np.abs(eigval.imag) < eigval_atol:
+            zero_eigval = np.hstack((zero_eigval, 0))
             zero_eigvec = np.hstack((zero_eigvec, M_eigvec[:,i].reshape(-1,1)))
 
-        elif np.allclose(eigval.real, 0) and eigval.imag > 0:
+        elif np.abs(eigval.real) < eigval_atol and eigval.imag > 0:
             imag_eigval = np.hstack((imag_eigval, 1j * eigval.imag)) # Positive purely imaginary eigenvalue
             imag_eigvec = np.hstack((imag_eigvec, M_eigvec[:,i].reshape(-1,1)))
 
@@ -789,8 +796,12 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
         eigval_ff, eigvec_ff = np.linalg.eigh(H_ff)
         eigval_cc, eigvec_cc = np.linalg.eigh(H_cc)
 
-        null_ff = eigvec_ff[:, np.abs(eigval_ff) < tol]
-        null_cc = eigvec_cc[:, np.abs(eigval_cc) < tol]
+        # Scale cutoff by largest eigenvalue (same pattern as pseudo_inv)
+        # to avoid misclassifying numerical noise as real eigenvalues
+        cutoff_ff = max(tol, 1e-9 * np.max(np.abs(eigval_ff))) if len(eigval_ff) > 0 else tol
+        cutoff_cc = max(tol, 1e-9 * np.max(np.abs(eigval_cc))) if len(eigval_cc) > 0 else tol
+        null_ff = eigvec_ff[:, np.abs(eigval_ff) < cutoff_ff]
+        null_cc = eigvec_cc[:, np.abs(eigval_cc) < cutoff_cc]
 
         assert null_ff.shape[1] == null_cc.shape[1], \
             "Unbalanced zero modes: flux and charge null spaces have different dimensions"
