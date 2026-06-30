@@ -44,17 +44,18 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["QuantumSCC"]
+packages = ["src/QuantumSCC"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/QuantumSCC",
+    "/src/QuantumSCC",
+    "/tests",
     "/README.md",
     "/LICENSE",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["QuantumSCC/unit_test"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

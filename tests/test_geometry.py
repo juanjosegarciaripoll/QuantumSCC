@@ -7,13 +7,6 @@ mathematical invariant of the symplectic form / Darboux reduction.
 """
 
 import numpy as np
-import os
-import sys
-
-current_dir  = os.path.dirname(os.path.abspath(__file__))
-package_dir  = os.path.dirname(current_dir)
-project_root = os.path.dirname(package_dir)
-sys.path.insert(0, project_root)
 
 from QuantumSCC.core.elements import Capacitor, Inductor
 from QuantumSCC.core.topology import Topology

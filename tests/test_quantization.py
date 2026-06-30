@@ -10,13 +10,6 @@ The input includes one JJ and one QPS element so that all six invariants
 """
 
 import numpy as np
-import os
-import sys
-
-current_dir  = os.path.dirname(os.path.abspath(__file__))
-package_dir  = os.path.dirname(current_dir)
-project_root = os.path.dirname(package_dir)
-sys.path.insert(0, project_root)
 
 from QuantumSCC.core.elements import Capacitor, Inductor, Junction, PhaseSlip
 from QuantumSCC.core.topology import Topology

@@ -15,16 +15,9 @@ physical capacitances/inductances — a computation that shares NO code with
 the QuantumSCC pipeline.
 """
 
-import sys
-import os
 import pytest
 import numpy as np
 from scipy.linalg import eigh
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-package_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(package_dir)
-sys.path.insert(0, project_root)
 
 from QuantumSCC import Circuit, Capacitor, Inductor, Junction, PhaseSlip
 
