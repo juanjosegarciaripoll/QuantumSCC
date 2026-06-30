@@ -41,6 +41,7 @@ Issues = "https://github.com/juanjosegarciaripoll/QuantumSCC/issues"
 dev = [
     "pytest>=8.0",
     "ruff>=0.10",
+    "mypy>=1.11",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -66,3 +67,16 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+# Static type checking is required for the diagonaliser (solver) component only;
+# the rest of the quantisation library is intentionally left untyped for now.
+[tool.mypy]
+python_version = "3.13"
+files = ["src/QuantumSCC/diag"]
+strict = true
+
+# scipy ships no type information; treat its symbols as untyped rather than
+# failing on the missing stubs. (numpy is typed.)
+[[tool.mypy.overrides]]
+module = ["scipy.*"]
+ignore_missing_imports = true
