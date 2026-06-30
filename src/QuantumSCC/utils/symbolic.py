@@ -14,8 +14,8 @@ This avoids full sympy matrix multiplication — only scalar * outer product add
 The Schur complement (Eq. 18 of the paper) is applied symbolically if needed.
 """
 
-import sympy as sp
 import numpy as np
+import sympy as sp
 
 from ..core.elements import Capacitor, Inductor, Junction, PhaseSlip
 

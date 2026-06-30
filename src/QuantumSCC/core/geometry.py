@@ -6,8 +6,10 @@ Corresponds to Step 2 (Section IIB) of the algorithm.
 """
 
 import numpy as np
-from .elements import Junction, Capacitor, Inductor, PhaseSlip
+
 from ..utils.linalg import omega_symplectic_transformation
+from .elements import Capacitor, Inductor, Junction, PhaseSlip
+
 
 class Geometry:
     def __init__(self, topology, debug: bool = False):

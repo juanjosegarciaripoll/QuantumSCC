@@ -7,8 +7,10 @@ Corresponds to Sections III, IV, and V.
 """
 
 import numpy as np
-from .elements import Junction, Capacitor, Inductor, PhaseSlip
+
 from ..utils.linalg import pseudo_inv, symplectic_transformation
+from .elements import Capacitor, Inductor, Junction, PhaseSlip
+
 
 class Quantization:
     def __init__(self, topology, geometry, debug: bool = False):
@@ -368,7 +370,8 @@ class Quantization:
         Normal-mode diagonalisation is intentionally not applied symbolically.
         """
         import sympy as sp
-        from ..utils.symbolic import build_symbolic_hamiltonian, _to_sym
+
+        from ..utils.symbolic import _to_sym, build_symbolic_hamiltonian
 
         H_sym, sym_vals, J_syms, P_syms = build_symbolic_hamiltonian(self.topo, self.geom)
 
@@ -440,7 +443,7 @@ class Quantization:
             pass
 
         if _in_jupyter:
-            from IPython.display import display, Math
+            from IPython.display import Math, display
             display(Math(r'H/\hbar = ' + sp.latex(H_expr)))
         else:
             _sup = {'**2': '²', '**3': '³', '**4': '⁴', '**5': '⁵'}
@@ -455,17 +458,17 @@ class Quantization:
             print()
             print('Canonical variables:')
             if nCF > 0:
-                print(f'  φ_c{{k}}  compact flux      (JJ sector, periodic S¹)  — conjugate: n_c')
+                print('  φ_c{k}  compact flux      (JJ sector, periodic S¹)  — conjugate: n_c')
             if nCC > 0:
-                print(f'  ψ_c{{k}}  compact flux      (QPS sector, conjugate to q_c) — energy: E_L·ψ_c²')
+                print('  ψ_c{k}  compact flux      (QPS sector, conjugate to q_c) — energy: E_L·ψ_c²')
             if nEF > 0:
-                print(f'  φ_e{{k}}  extended flux     (oscillator modes, ℝ)')
+                print('  φ_e{k}  extended flux     (oscillator modes, ℝ)')
             if nCF > 0:
-                print(f'  n_c{{k}}  compact charge    (integer spectrum, conjugate to φ_c)')
+                print('  n_c{k}  compact charge    (integer spectrum, conjugate to φ_c)')
             if nCC > 0:
-                print(f'  q_c{{k}}  compact charge    (QPS sector, integer spectrum S¹)')
+                print('  q_c{k}  compact charge    (QPS sector, integer spectrum S¹)')
             if nEF > 0:
-                print(f'  n_e{{k}}  extended charge   (oscillator modes, ℝ)')
+                print('  n_e{k}  extended charge   (oscillator modes, ℝ)')
 
             print()
             print('Parameter values (GHz):')
@@ -492,8 +495,8 @@ class Quantization:
 
         # Print the diagonalized Hamiltonian
         extended_hamiltonian = self.extended_quantum_hamiltonian.real
-        print(f'Diagonalized quantum Hamiltonian:')
-        print(f'H/ℏ = ', end=" ")
+        print('Diagonalized quantum Hamiltonian:')
+        print('H/ℏ = ', end=" ")
 
         for i in range(len(extended_hamiltonian)//2):
             if i != len(extended_hamiltonian)//2 - 1:
@@ -526,8 +529,8 @@ class Quantization:
         print('----------------------------------------------------------------------')
 
         # Print the  Hamiltonian
-        print(f'Numerical Hamiltonian:')
-        print(f'H/ℏ (GHz) =', end=" ")
+        print('Numerical Hamiltonian:')
+        print('H/ℏ (GHz) =', end=" ")
 
         # --- Variable naming helper (matches symbolic Hamiltonian names) ---
         nCF = no_compact_fluxes
@@ -615,28 +618,28 @@ class Quantization:
 
         if verbose:
             np.set_printoptions(precision=precision)
-            print(f'JJ coupling vectors v (flux space):')
+            print('JJ coupling vectors v (flux space):')
             for i in range(vector_JJ.shape[1]):
                 print(f'v_{i+1} = {(vector_JJ[:, i].real).T}')
 
             if no_QPS > 0:
                 print('')
-                print(f'QPS coupling vectors u (charge space):')
+                print('QPS coupling vectors u (charge space):')
                 for i in range(vector_QPS.shape[1]):
                     print(f'u_{i+1} = {(vector_QPS[:, i].real).T}')
 
             print('')
 
-            print(f'Flux-charge variable vector \u03BE\u03C6:')
-            print(f'\u03BE\u03C6\u1D40 = (', end=" ")
+            print('Flux-charge variable vector \u03BE\u03C6:')
+            print('\u03BE\u03C6\u1D40 = (', end=" ")
             for i in range(2*nF):
                 print(f' {_var_label(i)}', end=" ")
-            print(f')')
+            print(')')
 
             if no_QPS > 0:
-                print(f'')
-                print(f'Charge variable vector \u03BEq (QPS sector):')
-                print(f'\u03BEq\u1D40 = (', end=" ")
+                print('')
+                print('Charge variable vector \u03BEq (QPS sector):')
+                print('\u03BEq\u1D40 = (', end=" ")
                 for i in range(nCC):
                     print(f' q_c{i+1}', end=" ")
                 for i in range(nCC):
@@ -644,18 +647,18 @@ class Quantization:
                 nEF = nF - nCF - nCC
                 for i in range(nEF):
                     print(f' \u03D5_e{i+1}', end=" ")
-                print(f')')
+                print(')')
 
-            print(f'')
-            print(f'Operator subscripts explanation:')
-            print(f' - \u03D5_c: compact flux (JJ phase, periodic S\u00B9)')
-            print(f' - \u03C8_c: QPS-conjugate flux (paired with compact charge q_c)')
-            print(f' - \u03D5_e, n_e: extended oscillator modes (\u211D)')
-            print(f' - n_c: JJ-conjugate charge (Cooper pair number)')
-            print(f' - q_c: compact charge (QPS, periodic S\u00B9)')
             print('')
-            print(f'Relation between number-phase operators and flux-charge operators:')
-            print(f' - n = Q/(2e)')
-            print(f' - \u03D5 = 2\u03C0 \u03C6/(\u03C6_0)')
+            print('Operator subscripts explanation:')
+            print(' - \u03D5_c: compact flux (JJ phase, periodic S\u00B9)')
+            print(' - \u03C8_c: QPS-conjugate flux (paired with compact charge q_c)')
+            print(' - \u03D5_e, n_e: extended oscillator modes (\u211D)')
+            print(' - n_c: JJ-conjugate charge (Cooper pair number)')
+            print(' - q_c: compact charge (QPS, periodic S\u00B9)')
+            print('')
+            print('Relation between number-phase operators and flux-charge operators:')
+            print(' - n = Q/(2e)')
+            print(' - \u03D5 = 2\u03C0 \u03C6/(\u03C6_0)')
 
         print('----------------------------------------------------------------------')

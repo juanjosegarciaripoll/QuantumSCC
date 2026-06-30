@@ -24,11 +24,10 @@ The zero corresponds to q_c (compact QPS charge has no quadratic energy).
 Hence  max(eigvalsh(FS_quadratic_hamiltonian_phiq)) = 2 · max(E_C, E_L1, E_L2).
 """
 
-import pytest
 import numpy as np
+import pytest
 
-from QuantumSCC import Circuit, Capacitor, Inductor, Junction, PhaseSlip
-
+from QuantumSCC import Capacitor, Circuit, Inductor, PhaseSlip
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

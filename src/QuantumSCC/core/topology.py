@@ -13,23 +13,23 @@ Implements the two-topology procedure from PRX 2025 Eq. 42-44:
   D_cut  = Fcut[:, one-island]   (QPS + Ind) →  ker(D_cut)  = compact charge
 """
 
-from typing import List, Tuple
+
 import numpy as np
 
-from .elements import Junction, Capacitor, Inductor, PhaseSlip
 from ..utils.linalg import (
-    GaussJordan,
-    reverseGaussJordan,
-    remove_zero_rows,
-    integer_null_space,
     Gauge_variable_symplification,
+    GaussJordan,
+    integer_null_space,
+    remove_zero_rows,
+    reverseGaussJordan,
 )
+from .elements import Capacitor, Inductor, Junction, PhaseSlip
 
-Edge = Tuple[int, int, object]
+Edge = tuple[int, int, object]
 
 
 class Topology:
-    def __init__(self, elements_list: List[Edge], debug: bool = False):
+    def __init__(self, elements_list: list[Edge], debug: bool = False):
         """
         Initializes the topology analysis.
         Processes the input list of elements to identify nodes and categorize components.

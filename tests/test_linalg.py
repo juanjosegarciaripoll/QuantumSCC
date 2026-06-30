@@ -3,14 +3,16 @@ Unit tests for linear algebra functions in QuantumSCC.utils.linalg
 """
 
 import unittest
+
 import numpy as np
 
 from QuantumSCC.utils.linalg import (
     GaussJordan,
-    reverseGaussJordan,
     omega_symplectic_transformation,
-    symplectic_transformation
+    reverseGaussJordan,
+    symplectic_transformation,
 )
+
 
 class Test_Gauss_Jordan_method(unittest.TestCase):
 

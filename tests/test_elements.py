@@ -7,11 +7,11 @@ No Circuit object is built here — these are pure element-layer tests.
 """
 
 import unittest
+
 import numpy as np
 
-from QuantumSCC.utils import units as unt
 from QuantumSCC.core.elements import Capacitor, Inductor, Junction, PhaseSlip
-
+from QuantumSCC.utils import units as unt
 
 # ── Capacitor ─────────────────────────────────────────────────────────────────
 

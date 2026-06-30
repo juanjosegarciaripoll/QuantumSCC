@@ -5,9 +5,10 @@ Contains the classes for the circuit elements:
 Capacitors, Inductors, and Josephson Junctions.
 """
 
-from typing import Optional, Union
 import numpy as np
+
 from ..utils import units as unt
+
 
 class Capacitor:
     """
@@ -27,7 +28,7 @@ class Capacitor:
     def __init__(
         self,
         value: float,
-        unit: Optional[str] = None,
+        unit: str | None = None,
     ) -> None:
 
         if (
@@ -102,7 +103,7 @@ class Inductor:
     def __init__(
         self,
         value: float,
-        unit: Optional[str] = None,
+        unit: str | None = None,
     ) -> None:
 
         if (
@@ -181,7 +182,7 @@ class Junction:
     def __init__(
         self,
         value: float,
-        unit: Optional[str] = None,
+        unit: str | None = None,
     ) -> None:
 
         if unit not in unt.freq_list and unit is not None:
@@ -228,7 +229,7 @@ class PhaseSlip:
     def __init__(
         self,
         value: float,
-        unit: Optional[str] = None,
+        unit: str | None = None,
     ) -> None:
 
         if unit not in unt.freq_list and unit is not None:

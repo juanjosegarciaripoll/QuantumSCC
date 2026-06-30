@@ -9,8 +9,8 @@ mathematical invariant of the symplectic form / Darboux reduction.
 import numpy as np
 
 from QuantumSCC.core.elements import Capacitor, Inductor
-from QuantumSCC.core.topology import Topology
 from QuantumSCC.core.geometry import Geometry
+from QuantumSCC.core.topology import Topology
 
 # Minimal valid input: 2 nodes, 1 inductor + 1 capacitor.
 # Anonymous — no circuit architecture is implied.

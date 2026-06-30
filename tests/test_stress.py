@@ -15,12 +15,11 @@ physical capacitances/inductances — a computation that shares NO code with
 the QuantumSCC pipeline.
 """
 
-import pytest
 import numpy as np
+import pytest
 from scipy.linalg import eigh
 
-from QuantumSCC import Circuit, Capacitor, Inductor, Junction, PhaseSlip
-
+from QuantumSCC import Capacitor, Circuit, Inductor, Junction, PhaseSlip
 
 # ── Shared invariant checker ─────────────────────────────────────────────────
 

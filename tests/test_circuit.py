@@ -16,17 +16,17 @@ Sections
 7. Backwards compatibility — pre-QPS circuits unaffected
 """
 
-import unittest
-import numpy as np
-from io import StringIO
 import contextlib
+import unittest
+from io import StringIO
 
-from QuantumSCC import Circuit, Capacitor, Inductor, Junction, PhaseSlip
-from QuantumSCC.core.topology import Topology
+import numpy as np
+
+from QuantumSCC import Capacitor, Circuit, Inductor, Junction, PhaseSlip
 from QuantumSCC.core.geometry import Geometry
 from QuantumSCC.core.quantization import Quantization
+from QuantumSCC.core.topology import Topology
 from QuantumSCC.utils import units as unt
-
 
 # ── LC oscillator ─────────────────────────────────────────────────────────────
 

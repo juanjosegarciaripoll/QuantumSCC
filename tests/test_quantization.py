@@ -12,9 +12,9 @@ The input includes one JJ and one QPS element so that all six invariants
 import numpy as np
 
 from QuantumSCC.core.elements import Capacitor, Inductor, Junction, PhaseSlip
-from QuantumSCC.core.topology import Topology
 from QuantumSCC.core.geometry import Geometry
 from QuantumSCC.core.quantization import Quantization
+from QuantumSCC.core.topology import Topology
 
 # Minimal input with one JJ and one QPS so every invariant is non-trivial.
 # Anonymous — no circuit architecture is implied.

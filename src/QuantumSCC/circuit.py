@@ -3,15 +3,13 @@ circuit.py contains the classes for the circuit and their properties.
 Refactored to use the core modules.
 """
 
-from typing import Any, Tuple, List
 
-from .core.elements import Capacitor, Inductor, Junction, PhaseSlip
-from .core.topology import Topology
 from .core.geometry import Geometry
 from .core.quantization import Quantization
+from .core.topology import Topology
 from .model import CircuitModel
 
-Edge = Tuple[int, int, object]
+Edge = tuple[int, int, object]
 
 class Circuit:
     """
@@ -26,7 +24,7 @@ class Circuit:
             Boolean flag to enable detailed print output of the derivation steps.
     """
 
-    def __init__(self, elements: List[Edge], debug: bool = False) -> None:
+    def __init__(self, elements: list[Edge], debug: bool = False) -> None:
         """Define a circuit from a list of edges and circuit elements."""
         
         self.debug = debug

@@ -11,10 +11,10 @@ Junction / PhaseSlip are tested in test_elements.py.
 """
 
 import unittest
+
 import numpy as np
 
 from QuantumSCC.utils import units as unt
-
 
 # ── 1. Unit conversion tables ─────────────────────────────────────────────────
 

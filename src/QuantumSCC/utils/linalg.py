@@ -3,10 +3,11 @@
 algebra.py contains the  algebraic functions the program needs to its correct operation
 """
 
-import numpy as np
 from fractions import Fraction
-from math import gcd
 from functools import reduce
+from math import gcd
+
+import numpy as np
 from scipy.linalg import null_space
 
 Matrix = np.ndarray
@@ -744,8 +745,17 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
     for i, eigval in enumerate(imag_eigval):
 
         # Repeated eigenvalues
+        # FIXME(F821): this degenerate-eigenvalue branch references two names
+        # that are never bound on the path that reaches it:
+        #   - `j` (line below) is incremented before assignment; it is only set
+        #     to 0 at the end of the loop body, which `continue` here skips, so
+        #     the first repeated eigenvalue hits an unbound `j`.
+        #   - `sigma` (a few lines down) is expected to carry over from the
+        #     preceding non-repeated iteration but is a loop-local there.
+        # Left untouched pending a correct Gram–Schmidt fix for degenerate
+        # symplectic eigenvectors. Not auto-fixable; do not paper over.
         if i > 0 and np.allclose(imag_eigval[i-1], imag_eigval[i]):
-            j += 1 
+            j += 1
             summary = 0
             for m in range(1,j+1):
                 Phi_star = np.conj(normal_imag_eigvec[:,i-m].T @ J @ np.conj(imag_eigvec[:,i]))

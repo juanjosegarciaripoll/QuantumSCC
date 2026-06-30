@@ -5,10 +5,9 @@ Contains physical constants and unit conversion utilities.
 Adapted from SQcircuit.
 """
 
-from typing import Dict
 
 # Henry units
-henry_list: Dict[str, float] = {
+henry_list: dict[str, float] = {
     'H': 1.0, 
     'mH': 1.0e-3, 
     'uH': 1.0e-6,
@@ -18,7 +17,7 @@ henry_list: Dict[str, float] = {
 }
 
 # Farad units
-farad_list: Dict[str, float] = {
+farad_list: dict[str, float] = {
     'F': 1.0, 
     'mF': 1.0e-3, 
     'uF': 1.0e-6,
@@ -28,7 +27,7 @@ farad_list: Dict[str, float] = {
 }
 
 # Frequency units
-freq_list: Dict[str, float] = {
+freq_list: dict[str, float] = {
     'Hz': 1.0, 
     'kHz': 1.0e3, 
     'MHz': 1.0e6,
@@ -37,7 +36,7 @@ freq_list: Dict[str, float] = {
 }
 
 # Time units
-time_list: Dict[str, float] = {
+time_list: dict[str, float] = {
     's': 1.0, 
     'ms': 1.0e-3, 
     'us': 1.0e-6,
