@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "QuantumSCC"
+version = "0.1.0"
+description = "Automated derivation and diagonalization of superconducting circuit Hamiltonians"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = [
+    "superconducting circuits",
+    "quantum",
+    "Hamiltonian",
+    "Faddeev-Jackiw",
+    "circuit quantization",
+    "physics",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=2.5.0",
+    "scipy>=1.18.0",
+    "sympy>=1.14.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/juanjosegarciaripoll/QuantumSCC"
+Repository = "https://github.com/juanjosegarciaripoll/QuantumSCC"
+Issues = "https://github.com/juanjosegarciaripoll/QuantumSCC/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["QuantumSCC"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/QuantumSCC",
+    "/README.md",
+    "/LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["QuantumSCC/unit_test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
