@@ -9,6 +9,7 @@ from .core.elements import Capacitor, Inductor, Junction, PhaseSlip
 from .core.topology import Topology
 from .core.geometry import Geometry
 from .core.quantization import Quantization
+from .model import CircuitModel
 
 Edge = Tuple[int, int, object]
 
@@ -141,6 +142,20 @@ class Circuit:
         for k in range(nEF):
             pairs.append((f'phi_e{k+1}', f'n_e{k+1}', 'extended'))
         return pairs
+
+    def model(self, tol: float = 1e-12) -> CircuitModel:
+        """Return a solver-ready :class:`~QuantumSCC.model.CircuitModel`.
+
+        Repackages the quantised circuit (phiq / ready-to-quantise basis) into
+        a single flat data structure — sector mode counts, the quadratic
+        matrices ``K_flux``/``K_charge``, and the cosine amplitudes/coupling
+        vectors — from which an external solver can reconstruct the
+        Hamiltonian. See ``docs/model_extraction.md`` for the recipe.
+
+        Entries below ``tol`` are zeroed to keep the matrices sparse; pass
+        ``tol=0`` to retain raw values.
+        """
+        return CircuitModel.from_circuit(self, tol=tol)
 
     def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9, verbose: bool = True):
         """[Terminal + Jupyter] Print the Hamiltonian with symbolic energy parameters
