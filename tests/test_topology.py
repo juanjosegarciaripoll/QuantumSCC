@@ -7,6 +7,7 @@ mathematical invariant of the Topology construction.
 """
 
 import numpy as np
+import pytest
 
 from QuantumSCC.core.elements import Capacitor, Inductor, Junction, PhaseSlip
 from QuantumSCC.core.topology import Topology
@@ -58,8 +59,6 @@ def test_compact_charge_bounded_by_qps():
 # ── PRX Eq. 42 integer kernel verification ─────────────────────────────────
 # The compact columns of K must have integer entries (0, ±1, ±2, ...).
 # This is the defining property of the integer_null_space algorithm.
-import pytest
-
 _CIRCUITS = {
     'LC': [(0, 1, Inductor(1, 'GHz')), (0, 1, Capacitor(1, 'GHz'))],
     'JJ': [(0, 1, Junction(1, 'GHz')), (0, 1, Capacitor(1, 'GHz'))],

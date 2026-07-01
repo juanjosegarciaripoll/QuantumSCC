@@ -154,11 +154,11 @@ class Inductor:
         if self.unit in unt.freq_list:
             return self.lValue * unt.freq_list[self.unit] / unt.get_unit_freq()
         else:
-            l = self.lValue * unt.henry_list[self.unit]
+            inductance = self.lValue * unt.henry_list[self.unit]
             # Inductance to Energy conversion
             return (
                 (unt.Phi0 / (2 * np.pi)) ** 2
-                / (2 * l)
+                / (2 * inductance)
                 / unt.hbar
                 / unt.get_unit_freq()
             )

@@ -26,8 +26,8 @@ class Geometry:
 
     def omega_function(self):
         """
-        Given the Lagrangian of the circuit: Lagrangian = omega - energy. It calculates the symplectic form of 
-        the two-form omega and the basis change matrix.
+        Given the Lagrangian of the circuit: Lagrangian = omega - energy. It calculates the
+        symplectic form of the two-form omega and the basis change matrix.
         """
         if self.debug:
             print("\n" + "-"*40)
@@ -66,7 +66,9 @@ class Geometry:
         omega_non_symplectic = self.topo.K.T @ omega_2B @ self.topo.K
 
         # Obtain the symplectic form of the omega matrix and the basis change matrix
-        omega_symplectic, V, no_final_compact_flux, no_final_compact_charge = omega_symplectic_transformation(
+        (
+            omega_symplectic, V, no_final_compact_flux, no_final_compact_charge
+        ) = omega_symplectic_transformation(
             omega_non_symplectic,
             no_compact_flux_variables=self.topo.no_reduced_compact_flux,
             no_compact_charge_variables=self.topo.no_reduced_compact_charge,
@@ -77,8 +79,10 @@ class Geometry:
         no_independent_variables = np.linalg.matrix_rank(omega_symplectic)
         omega_symplectic = omega_symplectic[:no_independent_variables, :no_independent_variables]
 
-        assert no_final_compact_flux <= no_independent_variables//2, \
-            "There is an error, the number of compact fluxes must be equal or smaller than the number of total fluxes"
+        assert no_final_compact_flux <= no_independent_variables//2, (
+            "There is an error, the number of compact fluxes must be equal or smaller "
+            "than the number of total fluxes"
+        )
 
         if self.debug:
             print(f"Omega Symplectic shape: {omega_symplectic.shape}")
@@ -87,4 +91,7 @@ class Geometry:
             print(f"Final compact flux variables: {no_final_compact_flux}")
             print(f"Final compact charge variables: {no_final_compact_charge}")
 
-        return omega_2B, omega_symplectic, V, no_independent_variables, no_final_compact_flux, no_final_compact_charge
+        return (
+            omega_2B, omega_symplectic, V, no_independent_variables,
+            no_final_compact_flux, no_final_compact_charge
+        )

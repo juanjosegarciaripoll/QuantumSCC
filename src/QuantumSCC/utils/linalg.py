@@ -73,7 +73,6 @@ def integer_null_space(M: np.ndarray) -> np.ndarray:
         pivot_cols.append(col)
         pivot_row += 1
 
-    rank = len(pivot_cols)
     free_cols = [j for j in range(n) if j not in pivot_cols]
 
     if len(free_cols) == 0:
@@ -143,7 +142,8 @@ def GaussJordan(M: Matrix):
 
 def reverseGaussJordan(M: Matrix):
     """
-    Transform an upper triangular matrix, M, into a diagonal matrix using the Gauss-Jordan algorithm.
+    Transform an upper triangular matrix, M, into a diagonal matrix using the Gauss-Jordan
+    algorithm.
 
     Parameters
     ----------
@@ -236,7 +236,8 @@ def proportional_rows(M: Matrix , tol: float=1e-14):
     Returns
     ----------
         proportional_rows_list: list
-            List of list made by the indexes of the proportional rows, separated by groups, of the input matrix M
+            List of list made by the indexes of the proportional rows, separated by groups,
+            of the input matrix M
     """
 
     no_rows = M.shape[0]
@@ -258,7 +259,7 @@ def proportional_rows(M: Matrix , tol: float=1e-14):
             # Check if rows i and j are proportional
             ratio = None
             is_proportional = True
-            for x, y in zip(M[i, :], M[j, :]):
+            for x, y in zip(M[i, :], M[j, :], strict=True):
                 
                 if np.abs(x) < tol and np.abs(y) < tol:
                     continue
@@ -272,7 +273,7 @@ def proportional_rows(M: Matrix , tol: float=1e-14):
                     break
 
                 
-            if is_proportional == True:
+            if is_proportional:
                 group.append(j)
                 rows_visited.add(j)
 
@@ -308,7 +309,10 @@ def Gauge_variable_symplification(M: Matrix, row_index: int, column_index: int, 
 
     # Ensure the pivot element [row_index, column_index] is not zero
     if np.abs(M[row_index, column_index]) < tol:
-        raise ValueError(f"The pivot element of Kloop at [{row_index}, {column_index}] is zero, cannot proceed with the Gauge variables simplification.")
+        raise ValueError(
+            f"The pivot element of Kloop at [{row_index}, {column_index}] is zero, cannot "
+            f"proceed with the Gauge variables simplification."
+        )
 
     # Normalize the column of the pivot to make M[row_index, column_index] = 1
     M[:, column_index] = M[:, column_index] / M[row_index, column_index]
@@ -448,9 +452,6 @@ def omega_symplectic_transformation(
     sector_rotation = None
     sector_delete_hidden = []
 
-    nEC = nQ - nCC
-    has_hidden_gauges = False
-
     if nF > nQ and nQ > 0:
         # Hidden gauge detection via SVD of Ω_FC (QPS-JJ-reduction.pdf §2-4)
         #
@@ -495,7 +496,6 @@ def omega_symplectic_transformation(
             Omega_new = np.delete(Omega_new, sector_delete_hidden, axis=1)
 
             sector_rotation = R
-            has_hidden_gauges = True
 
             # Update variable counts
             new_nCF = len(compact_dyn)
@@ -522,12 +522,12 @@ def omega_symplectic_transformation(
     available_QS = list(range(nCC))       # Q_S indices
 
     # Phase 1: φ_S[i] → Q_R[i]  (via A block)
-    for i in range(nCF):
+    for _ in range(nCF):
         charge_perm.append(available_QR.pop(0))
 
     # Phase 2: φ_R[j] → Q_S[j]  (via B block)
     # Phase 3: remaining φ_R → Q_R  (via D block)
-    for j in range(nEF):
+    for _ in range(nEF):
         if available_QS:
             charge_perm.append(available_QS.pop(0))
         elif available_QR:
@@ -602,7 +602,8 @@ def omega_symplectic_transformation(
         inv_V[nCF + nQ + i, nCF + nQ + i] = 1
 
     # Unpermute inv_V back to the original variable order.
-    # Step 1: undo the (compact flux | charges | extended flux) → (compact flux | extended flux | charges) swap.
+    # Step 1: undo the (compact flux | charges | extended flux) → (compact flux |
+    # extended flux | charges) swap.
     inv_V = np.hstack((
         inv_V[:, :nCF],
         inv_V[:, nCF + nQ:],
@@ -654,7 +655,11 @@ def omega_symplectic_transformation(
     if no_gauge_variables > 0:
         inv_V = np.vstack((inv_V, np.zeros((no_gauge_variables, inv_V.shape[1]))))
         for i, delete_index in enumerate(delete_index_list):
-            inv_V = np.hstack((inv_V[:, :delete_index], np.zeros((inv_V.shape[0], 1)), inv_V[:, delete_index:]))
+            inv_V = np.hstack((
+                inv_V[:, :delete_index],
+                np.zeros((inv_V.shape[0], 1)),
+                inv_V[:, delete_index:]
+            ))
             inv_V[i + no_non_gauge_variables, delete_index] = 1
 
     V = np.linalg.inv(inv_V)
@@ -663,15 +668,20 @@ def omega_symplectic_transformation(
     J[:no_flux_variables, no_flux_variables:2*no_flux_variables] = np.eye(no_flux_variables)
     J[no_flux_variables:2*no_flux_variables, :no_flux_variables] = -np.eye(no_flux_variables)
 
-    assert np.allclose(J, V.T @ Omega @ V), \
-        'Something goes wrong. Output matrix V must satisfy J = V.T @ Omega @ V, with J the symplectic matrix'
+    assert np.allclose(J, V.T @ Omega @ V), (
+        'Something goes wrong. Output matrix V must satisfy J = V.T @ Omega @ V, with J the '
+        'symplectic matrix'
+    )
 
     return J, V, no_compact_flux_variables, no_compact_charge_variables
 
 
-def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e-14) -> tuple[Matrix, Matrix]:
+def symplectic_transformation(
+    M: Matrix, no_flux_variables: int, tol: float = 1e-14
+) -> tuple[Matrix, Matrix]:
     """
-    Transform a square matrix M = JH (with H a positive semidefinite matrix and J the Symplectic matrix) to eigval*J = [[0,eigval*1],[-eigval*1,0]]
+    Transform a square matrix M = JH (with H a positive semidefinite matrix and J the
+    Symplectic matrix) to eigval*J = [[0,eigval*1],[-eigval*1,0]]
     such that eigval*J = inv(T) @ M @ T.
     Parameters
     ----------
@@ -687,7 +697,8 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
         M_out: Matrix 
             Output matrix. If Omega = False: M_out = eigval*J. If Omega = True: M_out = J
         T: Matrix
-            Basis change matrix that transforms the input matrix M into eigval*J (T, Omega = False) or J (V, Omega = True).
+            Basis change matrix that transforms the input matrix M into eigval*J
+            (T, Omega = False) or J (V, Omega = True).
     """
 
     # Verify that the input matrix is square, with an even dimenstion
@@ -703,11 +714,16 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
     M_eigval = M_eigval[index]
     M_eigvec = M_eigvec[:, index]
 
-    # Verify the input matrix does not have degenerate eigenvalues with geometric multiplicity < algebraic multiplicity
-    assert np.linalg.matrix_rank(M_eigvec, tol) == M.shape[0], "There are degenerate eigenvalues with geometric \
-        multiplicity < algebraic multiplicity -> I fail my assumption and the program is not ready."
+    # Verify the input matrix does not have degenerate eigenvalues with geometric
+    # multiplicity < algebraic multiplicity
+    assert np.linalg.matrix_rank(M_eigvec, tol) == M.shape[0], (
+        "There are degenerate eigenvalues with geometric "
+        "        multiplicity < algebraic multiplicity -> I fail my assumption and the "
+        "program is not ready."
+    )
 
-    # Organize the eigenvalues with their eigenvectors in two groups: zero and pure imaginary eigenvalues
+    # Organize the eigenvalues with their eigenvectors in two groups: zero and pure
+    # imaginary eigenvalues
     zero_eigval, zero_eigvec = np.empty(0), np.empty((M.shape[1], 0))
     imag_eigval, imag_eigvec = np.empty(0), np.empty((M.shape[1], 0))
 
@@ -723,7 +739,8 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
             zero_eigvec = np.hstack((zero_eigvec, M_eigvec[:,i].reshape(-1,1)))
 
         elif np.abs(eigval.real) < eigval_atol and eigval.imag > 0:
-            imag_eigval = np.hstack((imag_eigval, 1j * eigval.imag)) # Positive purely imaginary eigenvalue
+            # Positive purely imaginary eigenvalue
+            imag_eigval = np.hstack((imag_eigval, 1j * eigval.imag))
             imag_eigvec = np.hstack((imag_eigvec, M_eigvec[:,i].reshape(-1,1)))
 
     # Verify the input matrix has the correct eigenvalues
@@ -742,7 +759,7 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
     # Eigenvectors normalization under the symplectic inner product
     normal_imag_eigvec = np.empty((M.shape[0], 0))
 
-    for i, eigval in enumerate(imag_eigval):
+    for i, _eigval in enumerate(imag_eigval):
 
         # Repeated eigenvalues
         # FIXME(F821): this degenerate-eigenvalue branch references two names
@@ -755,12 +772,14 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
         # Left untouched pending a correct Gram–Schmidt fix for degenerate
         # symplectic eigenvectors. Not auto-fixable; do not paper over.
         if i > 0 and np.allclose(imag_eigval[i-1], imag_eigval[i]):
-            j += 1
+            j += 1  # FIXME(F821): `j` is unbound on the first repeated eigenvalue
             summary = 0
             for m in range(1,j+1):
                 Phi_star = np.conj(normal_imag_eigvec[:,i-m].T @ J @ np.conj(imag_eigvec[:,i]))
                 summary += Phi_star * normal_imag_eigvec[:,i-m].reshape(-1,1) 
 
+            # FIXME(F821): `sigma` is unbound here — it is a loop-local of the
+            # non-repeated branch below and does not carry into this path.
             eigvec = (imag_eigvec[:,i].reshape(-1,1) - sigma * summary)
             norm = np.abs(np.sqrt(eigvec.T @ J @ np.conj(eigvec)))
             normal_imag_eigvec = np.hstack((normal_imag_eigvec, eigvec/norm)) 
@@ -774,11 +793,20 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
         normal_imag_eigvec = np.hstack((normal_imag_eigvec, (imag_eigvec[:,i].reshape(-1,1))/Phi)) 
 
         # Verify the orthonormalization of the term i
-        assert np.allclose(normal_imag_eigvec[:,i].T @ J @ np.conj(normal_imag_eigvec[:,i]), 1j, rtol = tol) \
-            or np.allclose(normal_imag_eigvec[:,i].T @ J @ np.conj(normal_imag_eigvec[:,i]), -1j, rtol = tol), \
-            "There is an error in the orthonormalization of an eigenvector from a purely imaginary eigenvalue"
+        assert (
+            np.allclose(
+                normal_imag_eigvec[:,i].T @ J @ np.conj(normal_imag_eigvec[:,i]), 1j, rtol = tol
+            )
+            or np.allclose(
+                normal_imag_eigvec[:,i].T @ J @ np.conj(normal_imag_eigvec[:,i]), -1j, rtol = tol
+            )
+        ), (
+            "There is an error in the orthonormalization of an eigenvector from a purely "
+            "imaginary eigenvalue"
+        )
         
-    # Add an aditional phase to the imaginary eigenvectors, if it is necessary, to to obtain a block diagonal V matrix if it is possible
+    # Add an aditional phase to the imaginary eigenvectors, if it is necessary, to to obtain
+    # a block diagonal V matrix if it is possible
     for i in range(len(imag_eigval)):
         if np.allclose(sum(normal_imag_eigvec[:no_flux_variables,i]).real, 0):
             normal_imag_eigvec[:,i] = 1j * normal_imag_eigvec[:,i]
@@ -831,11 +859,18 @@ def symplectic_transformation(M: Matrix, no_flux_variables: int, tol: float = 1e
         T = np.hstack((T_plus, T_minus))
 
     # Verify that the matrix T satisies the conditions it must satisfy
-    assert T.shape[0] == M.shape[0], "There is an error in the construction of the normal form transfromation matrix T. \
-        It must have the same dimension as the input matrix"
-    assert np.allclose(J, T.T @ J @ T, rtol = tol), "There is an error in the construction of the normal form transfromation matrix T. \
-        It must be symplectic, T.T @ J @ T = J"
-    assert np.allclose(T.imag, 0, rtol = tol), "There is an error in the construction of the normal form transfromation matrix T. It must be real"
+    assert T.shape[0] == M.shape[0], (
+        "There is an error in the construction of the normal form transfromation matrix T. "
+        "        It must have the same dimension as the input matrix"
+    )
+    assert np.allclose(J, T.T @ J @ T, rtol = tol), (
+        "There is an error in the construction of the normal form transfromation matrix T. "
+        "        It must be symplectic, T.T @ J @ T = J"
+    )
+    assert np.allclose(T.imag, 0, rtol = tol), (
+        "There is an error in the construction of the normal form transfromation matrix T. "
+        "It must be real"
+    )
 
     # Obtain and return the output matrix 
     M_out = np.linalg.pinv(T) @ M @ T

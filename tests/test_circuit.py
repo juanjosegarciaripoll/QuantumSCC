@@ -565,7 +565,7 @@ class TestParallelQPSScaling(unittest.TestCase):
             expected_ncc = max(1, n - 1)
             qps  = [PhaseSlip(0.5, 'GHz') for _ in range(n)]
             inds = [Inductor(1.0, 'GHz') for _ in range(n)]
-            edges = [(0, 1, q) for q in qps] + [(0, 1, l) for l in inds]
+            edges = [(0, 1, q) for q in qps] + [(0, 1, ind) for ind in inds]
             topo = Topology(edges)
             self.assertEqual(topo.no_reduced_compact_charge, expected_ncc,
                              msg=f"N={n} QPS parallel: expected nCC={expected_ncc}")
@@ -586,7 +586,7 @@ class TestParallelQPSScaling(unittest.TestCase):
         for n in (2, 3, 4):
             qps  = [PhaseSlip(float(i + 1), 'GHz') for i in range(n)]
             inds = [Inductor(1.0, 'GHz') for _ in range(n)]
-            edges = [(0, 1, q) for q in qps] + [(0, 1, l) for l in inds]
+            edges = [(0, 1, q) for q in qps] + [(0, 1, ind) for ind in inds]
             circ = Circuit(edges)
             for col in range(n):
                 self.assertFalse(np.allclose(circ.vector_QPS[:, col], 0),
@@ -597,7 +597,7 @@ class TestParallelQPSScaling(unittest.TestCase):
         for n in (2, 3, 4):
             qps  = [PhaseSlip(float(i + 1), 'GHz') for i in range(n)]
             inds = [Inductor(1.0, 'GHz') for _ in range(n)]
-            edges = [(0, 1, q) for q in qps] + [(0, 1, l) for l in inds]
+            edges = [(0, 1, q) for q in qps] + [(0, 1, ind) for ind in inds]
             circ = Circuit(edges)
             for col in range(1, n):
                 np.testing.assert_allclose(
@@ -611,7 +611,7 @@ class TestParallelQPSScaling(unittest.TestCase):
         for n in (2, 3):
             qps  = [PhaseSlip(1.0, 'GHz') for _ in range(n)]
             inds = [Inductor(E_L[i], 'GHz') for i in range(n)]
-            edges = [(0, 1, q) for q in qps] + [(0, 1, l) for l in inds]
+            edges = [(0, 1, q) for q in qps] + [(0, 1, ind) for ind in inds]
             circ = Circuit(edges)
             diag = np.diag(circ.quadratic_hamiltonian)
             nonzero = diag[np.abs(diag) > 1e-10]

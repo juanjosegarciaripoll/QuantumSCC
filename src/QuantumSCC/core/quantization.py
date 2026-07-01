@@ -22,7 +22,9 @@ class Quantization:
         self.geom = geometry
 
         # Construct the Hamiltonian according to the end of Sect. IIB
-        self.quadratic_hamiltonian, self.vector_JJ, self.vector_QPS = self.classical_hamiltonian_function()
+        self.quadratic_hamiltonian, self.vector_JJ, self.vector_QPS = (
+            self.classical_hamiltonian_function()
+        )
 
         # Section III, diagonalization of the quadratic part
         self.extended_quantum_hamiltonian, self.T, self.G = self.extended_hamiltonian_quantization()
@@ -35,8 +37,8 @@ class Quantization:
 
     def classical_hamiltonian_function(self):
         """
-        Given the Lagrangian of the circuit: Lagrangian = omega - energy. It constructs the symplified 
-        quadratic Hamiltonian matrices from the energy function of the Lagrangian.
+        Given the Lagrangian of the circuit: Lagrangian = omega - energy. It constructs the
+        symplified quadratic Hamiltonian matrices from the energy function of the Lagrangian.
         """
         if self.debug:
             print("\n" + "-"*40)
@@ -56,7 +58,9 @@ class Quantization:
 
             elif isinstance(elem[2], Capacitor):
                 capacitor = elem[2]
-                quadratic_energy[i + self.topo.no_elements, i + self.topo.no_elements] = 2 * capacitor.energy()
+                quadratic_energy[i + self.topo.no_elements, i + self.topo.no_elements] = (
+                    2 * capacitor.energy()
+                )
 
             ## add Junction for consistency
             
@@ -69,7 +73,9 @@ class Quantization:
         quadratic_energy_after_Kirchhoff = self.topo.K.T @ quadratic_energy @ self.topo.K
 
         # Calculate the quadratic energy function matrix after symplectic basis change
-        quadratic_energy_symplectic_basis = self.geom.V.T @ quadratic_energy_after_Kirchhoff @ self.geom.V
+        quadratic_energy_symplectic_basis = (
+            self.geom.V.T @ quadratic_energy_after_Kirchhoff @ self.geom.V
+        )
 
         # Note: Cap||QPS is now rejected at topology construction time.
         # No special-casing needed for charge-sector gauge variables.
@@ -86,8 +92,11 @@ class Quantization:
         vector_JJ = self.geom.V.T @ self.topo.K.T @ vector_JJ
 
         # Verify JJ vector considers only dynamical variables
-        if np.allclose(vector_JJ[self.geom.no_independent_variables:, :], 0) == False:
-            raise ValueError("The Energy of the Josephson Junction depends on non-dynamical variables. We cannot solve the circuit.")
+        if not np.allclose(vector_JJ[self.geom.no_independent_variables:, :], 0):
+            raise ValueError(
+                "The Energy of the Josephson Junction depends on non-dynamical variables. "
+                "We cannot solve the circuit."
+            )
 
         vector_JJ = vector_JJ[:self.geom.no_independent_variables, :]
 
@@ -118,7 +127,7 @@ class Quantization:
                                   self.topo.elements[elem_idx][1]])
                 pair_groups.setdefault(pair, []).append(col_idx)
 
-            for pair, cols in pair_groups.items():
+            for cols in pair_groups.values():
                 if len(cols) <= 1:
                     continue
                 # Find representative with non-zero dynamical projection
@@ -145,7 +154,8 @@ class Quantization:
 
         vector_QPS = vector_QPS[:self.geom.no_independent_variables, :]
 
-        # If quadratic_energy_symplectic_basis size equals independent variables, it is the Hamiltonian
+        # If quadratic_energy_symplectic_basis size equals independent variables, it is the
+        # Hamiltonian
         if quadratic_energy_symplectic_basis.shape[0] == self.geom.no_independent_variables:
             quadratic_hamiltonian = quadratic_energy_symplectic_basis
 
@@ -160,12 +170,18 @@ class Quantization:
             TEF_21 = quadratic_energy_symplectic_basis[no_indep:, :no_indep]
             TEF_22 = quadratic_energy_symplectic_basis[no_indep:, no_indep:]
 
-            assert np.allclose(TEF_12, TEF_21.T) == True, "There is an error in the decomposition of the total energy function matrix in blocks"
+            assert np.allclose(TEF_12, TEF_21.T), (
+                "There is an error in the decomposition of the total energy function "
+                "matrix in blocks"
+            )
 
             try:
                 TEF_22_inv = pseudo_inv(TEF_22, tol = 1e-15)
-            except np.linalg.LinAlgError:
-                raise ValueError("There is no solution for the equation dH/dw = 0. The circuit does not present Hamiltonian dynamics.")
+            except np.linalg.LinAlgError as err:
+                raise ValueError(
+                    "There is no solution for the equation dH/dw = 0. The circuit does "
+                    "not present Hamiltonian dynamics."
+                ) from err
 
             quadratic_hamiltonian = TEF_11 - TEF_12 @ TEF_22_inv @ TEF_21
 
@@ -176,14 +192,21 @@ class Quantization:
         n_half = quadratic_hamiltonian.shape[0] // 2
         if n_half > 0 and quadratic_hamiltonian.shape[0] % 2 == 0:
             assert np.allclose(quadratic_hamiltonian[:n_half, n_half:], 0) and \
-                np.allclose(quadratic_hamiltonian[n_half:, :n_half], 0), \
-                'The classical Hamiltonian matrix must be block diagonal. There could be an error in the construction of the basis change matrix V'
+                np.allclose(quadratic_hamiltonian[n_half:, :n_half], 0), (
+                'The classical Hamiltonian matrix must be block diagonal. There could be '
+                'an error in the construction of the basis change matrix V')
         
-        assert np.allclose(quadratic_hamiltonian.T, quadratic_hamiltonian), "Something goes wrong. Quadratic Hamiltonian matrix must be symmetric."
+        assert np.allclose(quadratic_hamiltonian.T, quadratic_hamiltonian), (
+            "Something goes wrong. Quadratic Hamiltonian matrix must be symmetric."
+        )
 
         # Ensure there are no compact fluxes in the quadratic Hamiltonian
-        assert np.allclose(quadratic_hamiltonian[:self.geom.no_final_compact_flux, :self.geom.no_final_compact_flux], 0), \
-            "Something goes wrong. No compact fluxes should appear in the quadratic Hamiltonian."
+        assert np.allclose(
+            quadratic_hamiltonian[
+                :self.geom.no_final_compact_flux, :self.geom.no_final_compact_flux
+            ],
+            0,
+        ), "Something goes wrong. No compact fluxes should appear in the quadratic Hamiltonian."
 
         if self.debug:
             print(f"Quadratic Hamiltonian shape: {quadratic_hamiltonian.shape}")
@@ -223,12 +246,18 @@ class Quantization:
         )
         extended_indexes = np.block([extended_flux_indexes, extended_charge_indexes])
 
-        extended_quadratic_hamiltonian = self.quadratic_hamiltonian[np.ix_(extended_indexes, extended_indexes)]
+        extended_quadratic_hamiltonian = self.quadratic_hamiltonian[
+            np.ix_(extended_indexes, extended_indexes)
+        ]
         extended_dimension = extended_quadratic_hamiltonian.shape[0]
 
         # Get the quantum canonical Hamiltonian and the basis change matrix
-        J = np.block([[np.zeros((extended_dimension//2, extended_dimension//2)), np.eye(extended_dimension//2)],
-                      [-np.eye(extended_dimension//2), np.zeros((extended_dimension//2, extended_dimension//2))]])
+        J = np.block([
+            [np.zeros((extended_dimension//2, extended_dimension//2)),
+             np.eye(extended_dimension//2)],
+            [-np.eye(extended_dimension//2),
+             np.zeros((extended_dimension//2, extended_dimension//2))]
+        ])
 
         dynamical_matrix = J @ extended_quadratic_hamiltonian
 
@@ -241,22 +270,30 @@ class Quantization:
         # H[charge,charge] ≈ machine-epsilon produces eigenvalues ±i·sqrt(E_L·ε) ≈ ±3e-8j,
         # which exceeds atol=1e-8 and triggers a false "has oscillators" detection.
         # Physical oscillator frequencies are O(1 GHz) >> 1e-4, so this threshold is safe.
-        eigvals_dyn = np.linalg.eigvals(dynamical_matrix) if extended_dimension > 0 else np.array([])
+        eigvals_dyn = (
+            np.linalg.eigvals(dynamical_matrix) if extended_dimension > 0 else np.array([])
+        )
         has_oscillators = extended_dimension > 0 and not np.allclose(eigvals_dyn, 0, atol=1e-4)
 
         if has_oscillators:
-            _, T = symplectic_transformation(dynamical_matrix, no_flux_variables=extended_quadratic_hamiltonian.shape[0]//2)
+            _, T = symplectic_transformation(
+                dynamical_matrix, no_flux_variables=extended_quadratic_hamiltonian.shape[0]//2
+            )
             extended_canonical_hamiltonian = T.T @ extended_quadratic_hamiltonian @ T
 
-            # Proceed with the second quantization: Express the quantum Hamiltonian in the ladder operators basis.
-            I = np.eye(len(extended_canonical_hamiltonian)//2)
-            G = (1 / np.sqrt(2)) * np.block([[I, I], [-1j * I, 1j * I]])
+            # Proceed with the second quantization: Express the quantum Hamiltonian in the
+            # ladder operators basis.
+            eye = np.eye(len(extended_canonical_hamiltonian)//2)
+            G = (1 / np.sqrt(2)) * np.block([[eye, eye], [-1j * eye, 1j * eye]])
 
             extended_quantum_hamiltonian = np.conj(G.T) @ extended_canonical_hamiltonian @ G
 
-            # Verify the resulting Hamiltonian in the ladder operators basis is equal to the canonical Hamiltonian
-            assert np.allclose(extended_quantum_hamiltonian, extended_canonical_hamiltonian), \
-            "The matrix expression for the Hamiltonian in the ladder operators basis must be the same as the canonical Hamiltonian matrix."
+            # Verify the resulting Hamiltonian in the ladder operators basis is equal to the
+            # canonical Hamiltonian
+            assert np.allclose(extended_quantum_hamiltonian, extended_canonical_hamiltonian), (
+                "The matrix expression for the Hamiltonian in the ladder operators basis "
+                "must be the same as the canonical Hamiltonian matrix."
+            )
         else:
             # All extended modes are zero-frequency (free/frozen variables).
             # No symplectic diagonalization or second quantization needed.
@@ -285,11 +322,14 @@ class Quantization:
 
         # Compact flux indices: JJ compact flux [0..nCF-1] + QPS-inductor flux [nCF..nc_total-1]
         compact_flux_indexes = np.arange(0, nc_total)
-        # Compact charge indices: JJ-conjugate charges [nF..nF+nCF-1] + QPS compact charges [nF+nCF..nF+nc_total-1]
+        # Compact charge indices: JJ-conjugate charges [nF..nF+nCF-1] + QPS compact charges
+        # [nF+nCF..nF+nc_total-1]
         compact_charge_indexes = np.arange(no_flux, no_flux + nc_total)
         compact_indexes = np.block([compact_flux_indexes, compact_charge_indexes])
 
-        compact_quadratic_hamiltonian = self.quadratic_hamiltonian[np.ix_(compact_indexes, compact_indexes)]
+        compact_quadratic_hamiltonian = self.quadratic_hamiltonian[
+            np.ix_(compact_indexes, compact_indexes)
+        ]
         
         # Diagonalize flux and charge compact subblocks SEPARATELY.
         # Joint diagonalization fails when QPS compact charges (eigenvalue 0) and
@@ -323,19 +363,30 @@ class Quantization:
         FS_basis_change_phiq[no_flux:nc_total + no_flux, no_flux:nc_total + no_flux] = C_charge
 
         FS_basis_change_phiq[nc_total:no_flux, nc_total:no_flux] = T[:T.shape[0]//2, :T.shape[1]//2]
-        FS_basis_change_phiq[nc_total:no_flux, nc_total + no_flux:] = T[:T.shape[0]//2, T.shape[1]//2:]
-        FS_basis_change_phiq[nc_total + no_flux:, nc_total:no_flux] = T[T.shape[0]//2:, :T.shape[1]//2]
-        FS_basis_change_phiq[nc_total + no_flux:, nc_total + no_flux:] = T[T.shape[0]//2:, T.shape[1]//2:]
+        FS_basis_change_phiq[nc_total:no_flux, nc_total + no_flux:] = (
+            T[:T.shape[0]//2, T.shape[1]//2:]
+        )
+        FS_basis_change_phiq[nc_total + no_flux:, nc_total:no_flux] = (
+            T[T.shape[0]//2:, :T.shape[1]//2]
+        )
+        FS_basis_change_phiq[nc_total + no_flux:, nc_total + no_flux:] = (
+            T[T.shape[0]//2:, T.shape[1]//2:]
+        )
 
-        # Construct the Full space almost diagonalized quadratic Hamiltonian for the flux-charge variables
-        FS_quadratic_hamiltonian_phiq = np.conj(FS_basis_change_phiq.T) @ self.quadratic_hamiltonian @ FS_basis_change_phiq
+        # Construct the Full space almost diagonalized quadratic Hamiltonian for the
+        # flux-charge variables
+        FS_quadratic_hamiltonian_phiq = (
+            np.conj(FS_basis_change_phiq.T) @ self.quadratic_hamiltonian @ FS_basis_change_phiq
+        )
 
-        # Construct the final vectors of the JJ and QPS energy functions for the flux-charge variables
+        # Construct the final vectors of the JJ and QPS energy functions for the flux-charge
+        # variables
         final_vector_JJ_phiq = FS_basis_change_phiq.T @ vector_JJ
         final_vector_QPS_phiq = FS_basis_change_phiq.T @ vector_QPS
 
 
-        # Construct the full space basis change matrix for the ladder operators, number-phase variables
+        # Construct the full space basis change matrix for the ladder operators, number-phase
+        # variables
         TG = self.T @ self.G
 
         FS_basis_change_an = np.zeros((total_dimension, total_dimension), dtype=complex)
@@ -343,13 +394,24 @@ class Quantization:
         FS_basis_change_an[:nc_total, :nc_total] = C_flux
         FS_basis_change_an[no_flux:nc_total + no_flux, no_flux:nc_total + no_flux] = C_charge
 
-        FS_basis_change_an[nc_total:no_flux, nc_total:no_flux] = TG[:TG.shape[0]//2, :TG.shape[1]//2]
-        FS_basis_change_an[nc_total:no_flux, nc_total + no_flux:] = TG[:TG.shape[0]//2, TG.shape[1]//2:]
-        FS_basis_change_an[nc_total + no_flux:, nc_total:no_flux] = TG[TG.shape[0]//2:, :TG.shape[1]//2]
-        FS_basis_change_an[nc_total + no_flux:, nc_total + no_flux:] = TG[TG.shape[0]//2:, TG.shape[1]//2:]
+        FS_basis_change_an[nc_total:no_flux, nc_total:no_flux] = (
+            TG[:TG.shape[0]//2, :TG.shape[1]//2]
+        )
+        FS_basis_change_an[nc_total:no_flux, nc_total + no_flux:] = (
+            TG[:TG.shape[0]//2, TG.shape[1]//2:]
+        )
+        FS_basis_change_an[nc_total + no_flux:, nc_total:no_flux] = (
+            TG[TG.shape[0]//2:, :TG.shape[1]//2]
+        )
+        FS_basis_change_an[nc_total + no_flux:, nc_total + no_flux:] = (
+            TG[TG.shape[0]//2:, TG.shape[1]//2:]
+        )
 
-        # Construct the Full space almost diagonalized quadratic Hamiltonian for the ladder operators
-        FS_quadratic_hamiltonian_an = np.conj(FS_basis_change_an.T) @ self.quadratic_hamiltonian @ FS_basis_change_an
+        # Construct the Full space almost diagonalized quadratic Hamiltonian for the ladder
+        # operators
+        FS_quadratic_hamiltonian_an = (
+            np.conj(FS_basis_change_an.T) @ self.quadratic_hamiltonian @ FS_basis_change_an
+        )
 
         # Construct the final vectors of the JJ and QPS energy functions (ladder operators basis)
         final_vector_JJ_an = FS_basis_change_an.T @ vector_JJ
@@ -361,7 +423,9 @@ class Quantization:
                 final_vector_JJ_an, final_vector_QPS_an)
 
 
-    def symbolic_hamiltonian_expression(self, precision: int = 3, tol: float = 1e-9, verbose: bool = True):
+    def symbolic_hamiltonian_expression(
+        self, precision: int = 3, tol: float = 1e-9, verbose: bool = True
+    ):
         """
         Print the Hamiltonian symbolically (E_C, E_L, E_J, E_P as symbols).
 
@@ -460,7 +524,8 @@ class Quantization:
             if nCF > 0:
                 print('  φ_c{k}  compact flux      (JJ sector, periodic S¹)  — conjugate: n_c')
             if nCC > 0:
-                print('  ψ_c{k}  compact flux      (QPS sector, conjugate to q_c) — energy: E_L·ψ_c²')
+                print('  ψ_c{k}  compact flux      (QPS sector, conjugate to q_c) '
+                      '— energy: E_L·ψ_c²')
             if nEF > 0:
                 print('  φ_e{k}  extended flux     (oscillator modes, ℝ)')
             if nCF > 0:
@@ -500,7 +565,9 @@ class Quantization:
 
         for i in range(len(extended_hamiltonian)//2):
             if i != len(extended_hamiltonian)//2 - 1:
-                print(f'{extended_hamiltonian[i,i]:.{precision}f} GHz · (a\u2020_{i+1} a_{i+1}) + ', end=" ")
+                coeff = extended_hamiltonian[i,i]
+                print(f'{coeff:.{precision}f} GHz · '
+                      f'(a\u2020_{i+1} a_{i+1}) + ', end=" ")
             else:
                 print(f'{extended_hamiltonian[i,i]:.{precision}f} GHz · (a\u2020_{i+1} a_{i+1})')
             
@@ -510,7 +577,8 @@ class Quantization:
     def Hamiltonian_expression(self, precision: int = 3, tol: float = 1e-14, verbose: bool = True):
         """
         Print the numerical Hamiltonian.
-        verbose=True (default): full output with coupling vectors, variable legend, operator explanations.
+        verbose=True (default): full output with coupling vectors, variable
+        legend, operator explanations.
         verbose=False: only the H/ℏ expression line.
         """
 
@@ -556,36 +624,45 @@ class Quantization:
         for i in range(nCF + nCC, nF):
             if np.abs(quantum_quadratic_hamiltonian[i,i]) > 1e-14:
                 k = i - nCF - nCC + 1
-                print(f'+ {quantum_quadratic_hamiltonian[i,i]:.{precision}f} [(\u03D5_e{k})^2 + (n_e{k})^2]', end=" ")
+                print(f'+ {quantum_quadratic_hamiltonian[i,i]:.{precision}f} '
+                      f'[(\u03D5_e{k})^2 + (n_e{k})^2]', end=" ")
 
         # Print QPS-conjugate flux quadratic terms (ψ_c: flux paired with compact charge)
         # Display H coefficient = M_ii/2 (internal matrix M uses H = ½ξᵀMξ convention)
         for i in range(nCF, nCF + nCC):
             if np.abs(quantum_quadratic_hamiltonian[i,i]) > 1e-14:
-                print(f' + {quantum_quadratic_hamiltonian[i,i] / 2:.{precision}f} (\u03C8_c{i-nCF+1})^2', end=" ")
+                coeff = quantum_quadratic_hamiltonian[i,i] / 2
+                print(f' + {coeff:.{precision}f} '
+                      f'(\u03C8_c{i-nCF+1})^2', end=" ")
 
         # Print compact flux diagonal terms (ϕ_c: JJ compact flux)
         for i in range(nCF):
             if np.abs(quantum_quadratic_hamiltonian[i,i]) > tol:
-                print(f' + {quantum_quadratic_hamiltonian[i,i] / 2:.{precision}f} (\u03D5_c{i+1})^2', end=" ")
+                coeff = quantum_quadratic_hamiltonian[i,i] / 2
+                print(f' + {coeff:.{precision}f} '
+                      f'(\u03D5_c{i+1})^2', end=" ")
 
         # Print off-diagonal flux-flux coupling terms
         # H coefficient for off-diagonal: M_ij (symmetric matrix contributes M_ij·x_i·x_j)
         for i in range(nF):
             for j in range(i):
                 if np.abs(quantum_quadratic_hamiltonian[i,j]) > tol:
-                    print(f' + {quantum_quadratic_hamiltonian[i,j]:.{precision}f} {_var_label(i)} {_var_label(j)}', end=" ")
+                    coeff = quantum_quadratic_hamiltonian[i,j]
+                    print(f' + {coeff:.{precision}f} '
+                          f'{_var_label(i)} {_var_label(j)}', end=" ")
 
         # Print off-diagonal charge-charge coupling terms
         for i in range(nF, 2*nF):
             for j in range(nF, i):
                 if np.abs(quantum_quadratic_hamiltonian[i,j]) > tol:
-                    print(f' + {quantum_quadratic_hamiltonian[i,j]:.{precision}f} {_var_label(i)} {_var_label(j)}', end=" ")
+                    print(f' + {quantum_quadratic_hamiltonian[i,j]:.{precision}f} '
+                          f'{_var_label(i)} {_var_label(j)}', end=" ")
 
         # Print JJ-conjugate charge quadratic terms (n_c: charging energy)
         for i in range(nCF):
             if np.abs(quantum_quadratic_hamiltonian[i+nF, i+nF]) > 1e-14:
-                print(f' + {quantum_quadratic_hamiltonian[i+nF,i+nF] / 2:.{precision}f} (n_c{i+1})^2', end=" ")
+                print(f' + {quantum_quadratic_hamiltonian[i+nF,i+nF] / 2:.{precision}f} '
+                      f'(n_c{i+1})^2', end=" ")
 
         # Collect JJ energies
         junction_energy = []

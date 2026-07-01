@@ -47,12 +47,12 @@ class TestUnitTables(unittest.TestCase):
     def test_farad_consecutive_ratio(self):
         """Each Farad prefix is exactly 1e-3 times the previous one."""
         prefixes = ['F', 'mF', 'uF', 'nF', 'pF', 'fF']
-        for a, b in zip(prefixes, prefixes[1:]):
+        for a, b in zip(prefixes, prefixes[1:], strict=False):
             self.assertAlmostEqual(unt.farad_list[b] / unt.farad_list[a], 1e-3, places=20)
 
     def test_henry_consecutive_ratio(self):
         prefixes = ['H', 'mH', 'uH', 'nH', 'pH', 'fH']
-        for a, b in zip(prefixes, prefixes[1:]):
+        for a, b in zip(prefixes, prefixes[1:], strict=False):
             self.assertAlmostEqual(unt.henry_list[b] / unt.henry_list[a], 1e-3, places=20)
 
 

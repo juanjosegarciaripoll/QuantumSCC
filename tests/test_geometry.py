@@ -23,20 +23,20 @@ _G = Geometry(_T)
 
 def test_omega_2b_antisymmetric():
     """omega_2B must be antisymmetric: Ω = −Ωᵀ."""
-    O = _G.omega_2B
-    assert np.allclose(O, -O.T)
+    omega = _G.omega_2B
+    assert np.allclose(omega, -omega.T)
 
 
 def test_symplectic_form_antisymmetric():
     """omega_symplectic must be antisymmetric."""
-    O = _G.omega_symplectic
-    assert np.allclose(O, -O.T)
+    omega = _G.omega_symplectic
+    assert np.allclose(omega, -omega.T)
 
 
 def test_symplectic_rank():
     """rank(omega_symplectic) == no_independent_variables (Darboux is non-degenerate)."""
-    O = _G.omega_symplectic
-    assert np.linalg.matrix_rank(O) == _G.no_independent_variables
+    omega = _G.omega_symplectic
+    assert np.linalg.matrix_rank(omega) == _G.no_independent_variables
 
 
 def test_V_square():
