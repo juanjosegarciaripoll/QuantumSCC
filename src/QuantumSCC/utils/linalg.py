@@ -762,6 +762,14 @@ def symplectic_transformation(
     # Eigenvectors normalization under the symplectic inner product
     normal_imag_eigvec = np.empty((M.shape[0], 0))
 
+    # ADDED: pre-bind the loop-carried j / sigma. The `i > 0` guard on the
+    # degenerate branch below guarantees the non-degenerate path (which sets
+    # both) runs first, so these values are always overwritten before use;
+    # binding them here just makes that explicit and clears the F821 /
+    # has-type false positives. The FIXME below stays open for the deeper
+    # degenerate Gram-Schmidt review.
+    j = 0
+    sigma: Any = 1j
     for i, _eigval in enumerate(imag_eigval):
 
         # Repeated eigenvalues
@@ -776,7 +784,7 @@ def symplectic_transformation(
         # symplectic eigenvectors. Not auto-fixable; do not paper over.
         if i > 0 and np.allclose(imag_eigval[i-1], imag_eigval[i]):
             # FIXME(F821): `j` is unbound on the first repeated eigenvalue.
-            j += 1  # type: ignore[has-type]
+            j += 1
             summary: Any = 0
             for m in range(1, j + 1):
                 Phi_star = np.conj(normal_imag_eigvec[:,i-m].T @ J @ np.conj(imag_eigvec[:,i]))
@@ -784,7 +792,7 @@ def symplectic_transformation(
 
             # FIXME(F821): `sigma` is unbound here — it is a loop-local of the
             # non-repeated branch below and does not carry into this path.
-            eigvec = (imag_eigvec[:,i].reshape(-1,1) - sigma * summary)  # type: ignore[has-type]
+            eigvec = (imag_eigvec[:,i].reshape(-1,1) - sigma * summary)
             norm = np.abs(np.sqrt(eigvec.T @ J @ np.conj(eigvec)))
             normal_imag_eigvec = np.hstack((normal_imag_eigvec, eigvec/norm)) 
             continue
