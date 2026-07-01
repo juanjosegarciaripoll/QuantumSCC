@@ -167,22 +167,32 @@ LC_QPS_PARAMS = [
 @pytest.mark.parametrize("EC,EL1,EL2", LC_QPS_PARAMS,
     ids=[f"EC{a}_EL1{b}_EL2{c}" for a, b, c in LC_QPS_PARAMS])
 def test_lc_qps_coupled_frequency(EC, EL1, EL2):
-    """LC_QPS_coupled frequency: max(eigvalsh(FS_H)) = 2·max(E_C, E_L1, E_L2).
+    """LC_QPS_coupled: compact_charge mode has zero charge diagonal.
 
-    The quadratic Hamiltonian diagonal in the reduced (φ,q) basis is
-    [2·E_C, 2·E_L1, 2·E_L2, 0], so the maximum eigenvalue equals
-    2·max(E_C, E_L1, E_L2).  This verifies correct gauge reduction via SVD.
+    The compact_charge mode (QPS island) must have K_charge = 0, verifying
+    that the QPS charge is genuinely periodic (no q² term).  The extended
+    mode (LC island) carries all the charging energy.
     """
     circ = lc_qps_coupled(EC, EL1, EL2)
 
-    H = circ.FS_quadratic_hamiltonian_phiq.real
-    omega_num = max(np.linalg.eigvalsh(H))
-    omega_th  = 2.0 * max(EC, EL1, EL2)
+    H = circ.quadratic_hamiltonian
+    nF = circ.no_independent_variables // 2
+    nCC = circ.no_final_compact_charge
+    K_charge = H[nF:, nF:]
 
-    np.testing.assert_allclose(
-        omega_num, omega_th, rtol=1e-6,
-        err_msg=f"EC={EC}, EL1={EL1}, EL2={EL2}: ω={omega_num:.6f} ≠ {omega_th:.6f}"
-    )
+    # Compact_charge diagonal must be zero (periodic charge, no q²)
+    for m in range(nCC):
+        assert np.isclose(K_charge[m, m], 0, atol=1e-10), (
+            f"K_charge[{m},{m}] = {K_charge[m, m]} on compact_charge mode "
+            f"(should be 0 for periodic charge)"
+        )
+
+    # Extended mode must have nonzero charge diagonal (charging energy)
+    for m in range(nCC, nF):
+        assert K_charge[m, m] > 1e-10, (
+            f"K_charge[{m},{m}] = {K_charge[m, m]} on extended mode "
+            f"(should be nonzero — capacitor charging energy)"
+        )
 
 
 @pytest.mark.parametrize("EC,EL1,EL2", LC_QPS_PARAMS,

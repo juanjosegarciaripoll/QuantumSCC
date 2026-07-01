@@ -300,6 +300,32 @@ class Topology:
         # Extended flux directions: orthogonal complement of compact within ker(Floop)
         Kloop_extended = Fcut.T
 
+        # Reorder Kloop_extended columns so that those coupling to compact
+        # charge variables (Q_S, from QPS) come first.  This ensures the
+        # Darboux Phase 2 pairing (φ_R ↔ Q_S) picks the correct flux
+        # variable — the one that shares nodes with the QPS element.
+        #
+        # Criterion: column j of Fcut.T corresponds to node j.  If any QPS
+        # element has a nonzero entry in Fcut row j (i.e., the node touches
+        # a one-island nonlinear element), that column should come first.
+        # This mirrors the PRX 2025 block structure where B = ω[Q_S, φ_R]
+        # has its nonzero entries in the leading columns.
+        if no_reduced_compact_flux == 0 and self.no_QPS > 0 and Kloop_extended.shape[1] > 1:
+            qps_start = self.no_JJ + self.no_Capacitors
+            qps_end = qps_start + self.no_QPS
+            # For each Fcut.T column (node), check if any QPS has a nonzero entry
+            qps_cols = []
+            non_qps_cols = []
+            for j in range(Kloop_extended.shape[1]):
+                touches_qps = np.any(np.abs(Fcut[j, qps_start:qps_end]) > 1e-12)
+                if touches_qps:
+                    qps_cols.append(j)
+                else:
+                    non_qps_cols.append(j)
+            reorder = qps_cols + non_qps_cols
+            if reorder != list(range(Kloop_extended.shape[1])):
+                Kloop_extended = Kloop_extended[:, reorder]
+
         # Combine: [compact | extended], then clean up linear dependence
         if Kloop_compact.shape[1] == 0:
             Kloop = Kloop_extended
@@ -374,6 +400,24 @@ class Topology:
 
         # Extended charge directions: from Floop.T
         Kcut_extended = Floop.T
+
+        # Dual reorder for Kcut_extended: columns corresponding to loops
+        # touching JJ elements (two-island nonlinear) come first.
+        # This ensures the Darboux Phase 1 pairing (φ_S ↔ Q_R) picks
+        # the correct extended charge — the one that shares loops with JJ.
+        if self.no_JJ > 0 and Kcut_extended.shape[1] > 1:
+            jj_end = self.no_JJ  # JJ elements are first in the element list
+            jj_cols = []
+            non_jj_cols = []
+            for j in range(Kcut_extended.shape[1]):
+                touches_jj = np.any(np.abs(Floop[j, :jj_end]) > 1e-12)
+                if touches_jj:
+                    jj_cols.append(j)
+                else:
+                    non_jj_cols.append(j)
+            reorder = jj_cols + non_jj_cols
+            if reorder != list(range(Kcut_extended.shape[1])):
+                Kcut_extended = Kcut_extended[:, reorder]
 
         if Kcut_compact.shape[1] == 0:
             Kcut = Kcut_extended
