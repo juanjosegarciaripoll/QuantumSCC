@@ -4,6 +4,8 @@ Refactored to use the core modules.
 """
 
 
+import numpy as np
+
 from .core.geometry import Geometry
 from .core.quantization import Quantization
 from .core.topology import Topology
@@ -90,30 +92,35 @@ class Circuit:
             print("END OF DEBUGGING")
             print("="*50 + "\n")
 
-    def Kirchhoff(self):
+    def Kirchhoff(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, int]:
         """Wrapper for consistency checking, if needed manually."""
         return self.topo.Kirchhoff()
-    
-    def omega_function(self):
+
+    def omega_function(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, int, int]:
         """Wrapper for consistency checking, if needed manually."""
         return self.geom.omega_function()
-        
-    def classical_hamiltonian_function(self):
+
+    def classical_hamiltonian_function(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         return self.quant.classical_hamiltonian_function()
 
-    def extended_hamiltonian_quantization(self):
+    def extended_hamiltonian_quantization(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         return self.quant.extended_hamiltonian_quantization()
 
-    def total_hamiltonian_quantization(self):
+    def total_hamiltonian_quantization(
+        self,
+    ) -> tuple[
+        np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+        np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+    ]:
         return self.quant.total_hamiltonian_quantization()
 
-    def diagonal_harmonic_Hamiltonian_expression(self, precision: int = 3):
+    def diagonal_harmonic_Hamiltonian_expression(self, precision: int = 3) -> None:
         """[Terminal] Print harmonic frequencies in diagonal normal-mode basis."""
         self.quant.diagonal_harmonic_Hamiltonian_expression(precision)
 
     def Hamiltonian_expression(
         self, precision: int = 3, tol: float = 1e-14, verbose: bool = True
-    ):
+    ) -> None:
         """[Terminal] Print the numerical Hamiltonian.
         verbose=True (default): full output with coupling vectors, variable legend,
         operator explanations.
@@ -121,7 +128,7 @@ class Circuit:
         Works in both terminal scripts and Jupyter notebooks."""
         self.quant.Hamiltonian_expression(precision, tol, verbose)
 
-    def conjugate_pairs(self):
+    def conjugate_pairs(self) -> list[tuple[str, str, str]]:
         """Return the list of conjugate variable pairs in braket order.
 
         Each pair is (flux_label, charge_label, pair_type) where pair_type
@@ -135,7 +142,7 @@ class Circuit:
         nF = self.no_independent_variables // 2
         nEF = nF - nCF - nCC
 
-        pairs = []
+        pairs: list[tuple[str, str, str]] = []
         for k in range(nCF):
             pairs.append((f'phi_c{k+1}', f'n_c{k+1}', 'JJ_compact'))
         for k in range(nCC):
@@ -160,7 +167,7 @@ class Circuit:
 
     def symbolic_hamiltonian_expression(
         self, precision: int = 3, tol: float = 1e-9, verbose: bool = True
-    ):
+    ) -> None:
         """[Terminal + Jupyter] Print the Hamiltonian with symbolic energy parameters
         (E_C, E_L, E_J, E_P) in reduced Darboux variables.
         verbose=True (default): adds variable legend, parameter values, and full

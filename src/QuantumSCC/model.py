@@ -27,10 +27,14 @@ full reconstruction recipe.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from .core.elements import Junction, PhaseSlip
+
+if TYPE_CHECKING:
+    from .circuit import Circuit
 
 SECTORS = ("compact_flux", "compact_charge", "extended")
 
@@ -122,7 +126,7 @@ class CircuitModel:
 
     # ── construction ───────────────────────────────────────────────────
     @classmethod
-    def from_circuit(cls, circuit, tol: float = 1e-12) -> CircuitModel:
+    def from_circuit(cls, circuit: Circuit, tol: float = 1e-12) -> CircuitModel:
         """Build a :class:`CircuitModel` from a solved :class:`~QuantumSCC.Circuit`.
 
         The data is read from the phiq (ready-to-quantise) basis. Entries with

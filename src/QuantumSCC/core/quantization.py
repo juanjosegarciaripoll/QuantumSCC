@@ -6,14 +6,20 @@ as well as the diagonalization of the harmonic subspace.
 Corresponds to Sections III, IV, and V.
 """
 
+from typing import Any
+
 import numpy as np
 
 from ..utils.linalg import pseudo_inv, symplectic_transformation
 from .elements import Capacitor, Inductor, Junction, PhaseSlip
+from .geometry import Geometry
+from .topology import Topology
 
 
 class Quantization:
-    def __init__(self, topology, geometry, debug: bool = False):
+    def __init__(
+        self, topology: Topology, geometry: Geometry, debug: bool = False
+    ) -> None:
         """
         Initializes the quantization process using Topology and Geometry results.
         """
@@ -35,7 +41,7 @@ class Quantization:
         self.FS_quadratic_hamiltonian_an, self.FS_basis_change_an, \
         self.final_vector_JJ_an, self.final_vector_QPS_an = self.total_hamiltonian_quantization()
 
-    def classical_hamiltonian_function(self):
+    def classical_hamiltonian_function(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Given the Lagrangian of the circuit: Lagrangian = omega - energy. It constructs the
         symplified quadratic Hamiltonian matrices from the energy function of the Lagrangian.
@@ -121,7 +127,7 @@ class Quantization:
         if vector_QPS.shape[1] > 1:
             qps_indices = [i for i, elem in enumerate(self.topo.elements)
                            if isinstance(elem[2], PhaseSlip)]
-            pair_groups = {}
+            pair_groups: dict[frozenset[int], list[int]] = {}
             for col_idx, elem_idx in enumerate(qps_indices):
                 pair = frozenset([self.topo.elements[elem_idx][0],
                                   self.topo.elements[elem_idx][1]])
@@ -215,7 +221,7 @@ class Quantization:
         return quadratic_hamiltonian, vector_JJ, vector_QPS
     
 
-    def extended_hamiltonian_quantization(self):
+    def extended_hamiltonian_quantization(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Calculates the extended quantum Hamiltonian in its canonical form.
         """
@@ -310,7 +316,12 @@ class Quantization:
         return extended_quantum_hamiltonian, T, G
     
 
-    def total_hamiltonian_quantization(self):
+    def total_hamiltonian_quantization(
+        self,
+    ) -> tuple[
+        np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+        np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+    ]:
         # Define the compact quadratic Hamiltonian.
         # The compact sector includes both JJ compact flux pairs AND QPS compact charge pairs.
         # nc_total = nCF + nCC counts all compact (non-oscillator) pairs.
@@ -425,7 +436,7 @@ class Quantization:
 
     def symbolic_hamiltonian_expression(
         self, precision: int = 3, tol: float = 1e-9, verbose: bool = True
-    ):
+    ) -> Any:
         """
         Print the Hamiltonian symbolically (E_C, E_L, E_J, E_P as symbols).
 
@@ -501,7 +512,7 @@ class Quantization:
         # in a plain terminal script it raises NameError.
         _in_jupyter = False
         try:
-            shell = get_ipython()
+            shell = get_ipython()  # type: ignore[name-defined]
             _in_jupyter = shell is not None and hasattr(shell, 'kernel')
         except NameError:
             pass
@@ -512,8 +523,8 @@ class Quantization:
         else:
             _sup = {'**2': '²', '**3': '³', '**4': '⁴', '**5': '⁵'}
             s = str(H_expr)
-            for k, v in _sup.items():
-                s = s.replace(k, v)
+            for pat, rep in _sup.items():
+                s = s.replace(pat, rep)
             s = s.replace('*', '·')
             print(f'H/ℏ = {s}')
 
@@ -551,7 +562,7 @@ class Quantization:
 
         return H_expr
 
-    def diagonal_harmonic_Hamiltonian_expression(self, precision: int = 3):
+    def diagonal_harmonic_Hamiltonian_expression(self, precision: int = 3) -> None:
         """
         Print out the diagonalized Hamiltonian. 
         """
@@ -574,7 +585,9 @@ class Quantization:
         print('----------------------------------------------------------------------')
     
 
-    def Hamiltonian_expression(self, precision: int = 3, tol: float = 1e-14, verbose: bool = True):
+    def Hamiltonian_expression(
+        self, precision: int = 3, tol: float = 1e-14, verbose: bool = True
+    ) -> None:
         """
         Print the numerical Hamiltonian.
         verbose=True (default): full output with coupling vectors, variable
@@ -605,7 +618,7 @@ class Quantization:
         nCC = no_compact_charges
         nF  = no_flux_variables
 
-        def _var_label(i):
+        def _var_label(i: int) -> str:
             """Map matrix index to canonical variable name."""
             if i < nCF:
                 return f'\u03D5_c{i+1}'            # ϕ_c  compact JJ flux

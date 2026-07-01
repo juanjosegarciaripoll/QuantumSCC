@@ -9,10 +9,11 @@ import numpy as np
 
 from ..utils.linalg import omega_symplectic_transformation
 from .elements import Capacitor, Inductor, Junction, PhaseSlip
+from .topology import Topology
 
 
 class Geometry:
-    def __init__(self, topology, debug: bool = False):
+    def __init__(self, topology: Topology, debug: bool = False) -> None:
         """
         Initializes the geometry analysis using the results from the Topology step.
         """
@@ -24,7 +25,9 @@ class Geometry:
         self.no_independent_variables, self.no_final_compact_flux, \
         self.no_final_compact_charge = self.omega_function()
 
-    def omega_function(self):
+    def omega_function(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, int, int]:
         """
         Given the Lagrangian of the circuit: Lagrangian = omega - energy. It calculates the
         symplectic form of the two-form omega and the basis change matrix.

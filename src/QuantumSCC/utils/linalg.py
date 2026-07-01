@@ -6,6 +6,7 @@ algebra.py contains the  algebraic functions the program needs to its correct op
 from fractions import Fraction
 from functools import reduce
 from math import gcd
+from typing import Any
 
 import numpy as np
 from scipy.linalg import null_space
@@ -105,7 +106,7 @@ def integer_null_space(M: np.ndarray) -> np.ndarray:
 
     return K
 
-def GaussJordan(M: Matrix):
+def GaussJordan(M: Matrix) -> tuple[Matrix, Matrix]:
     """
     Transform the matrix M in an upper triangular matrix using the Gauss-Jordan algorithm.
 
@@ -140,7 +141,7 @@ def GaussJordan(M: Matrix):
     return M, order
 
 
-def reverseGaussJordan(M: Matrix):
+def reverseGaussJordan(M: Matrix) -> Matrix:
     """
     Transform an upper triangular matrix, M, into a diagonal matrix using the Gauss-Jordan
     algorithm.
@@ -165,7 +166,7 @@ def reverseGaussJordan(M: Matrix):
     return M
 
 
-def remove_zero_rows(M: Matrix, tol: float=1e-16):
+def remove_zero_rows(M: Matrix, tol: float=1e-16) -> Matrix:
     """
     Removes all-zero rows from a matrix M.
 
@@ -187,7 +188,7 @@ def remove_zero_rows(M: Matrix, tol: float=1e-16):
     return M
 
 
-def pseudo_inv(M: Matrix, tol: float=1e-15):
+def pseudo_inv(M: Matrix, tol: float=1e-15) -> Matrix:
     """
     Compute the (Moore-Penrose) pseudo-inverse of a matrix.
 
@@ -223,7 +224,7 @@ def pseudo_inv(M: Matrix, tol: float=1e-15):
     return pseudo_inv
 
 
-def proportional_rows(M: Matrix , tol: float=1e-14):
+def proportional_rows(M: Matrix , tol: float=1e-14) -> list[list[int]]:
     """
     It returns the indexes of the proportional rows, separated by groups, of the input matrix M.
 
@@ -284,7 +285,9 @@ def proportional_rows(M: Matrix , tol: float=1e-14):
     return proportional_rows_list
 
 
-def Gauge_variable_symplification(M: Matrix, row_index: int, column_index: int, tol: float=1e-14):
+def Gauge_variable_symplification(
+    M: Matrix, row_index: int, column_index: int, tol: float=1e-14
+) -> Matrix:
     """
     Performs column operations to make all elements in the specified row (row_index),
     except the element [row_index, column_index], equal to 0.
@@ -332,7 +335,7 @@ def omega_symplectic_transformation(
     no_flux_variables: int,
     no_compact_charge_variables: int = 0,
     tol: float = 1e-14,
-) -> tuple:
+) -> tuple[Matrix, Matrix, int, int]:
     """
     Transform an antisymmetric matrix Omega to the symplectic matrix J such that
     J = V.T @ Omega @ V, using the systematic Darboux reduction from
@@ -772,15 +775,16 @@ def symplectic_transformation(
         # Left untouched pending a correct Gram–Schmidt fix for degenerate
         # symplectic eigenvectors. Not auto-fixable; do not paper over.
         if i > 0 and np.allclose(imag_eigval[i-1], imag_eigval[i]):
-            j += 1  # FIXME(F821): `j` is unbound on the first repeated eigenvalue
-            summary = 0
-            for m in range(1,j+1):
+            # FIXME(F821): `j` is unbound on the first repeated eigenvalue.
+            j += 1  # type: ignore[has-type]
+            summary: Any = 0
+            for m in range(1, j + 1):
                 Phi_star = np.conj(normal_imag_eigvec[:,i-m].T @ J @ np.conj(imag_eigvec[:,i]))
-                summary += Phi_star * normal_imag_eigvec[:,i-m].reshape(-1,1) 
+                summary += Phi_star * normal_imag_eigvec[:,i-m].reshape(-1,1)
 
             # FIXME(F821): `sigma` is unbound here — it is a loop-local of the
             # non-repeated branch below and does not carry into this path.
-            eigvec = (imag_eigvec[:,i].reshape(-1,1) - sigma * summary)
+            eigvec = (imag_eigvec[:,i].reshape(-1,1) - sigma * summary)  # type: ignore[has-type]
             norm = np.abs(np.sqrt(eigvec.T @ J @ np.conj(eigvec)))
             normal_imag_eigvec = np.hstack((normal_imag_eigvec, eigvec/norm)) 
             continue

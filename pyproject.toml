@@ -68,15 +68,15 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
-# Static type checking is required for the diagonaliser (solver) component only;
-# the rest of the quantisation library is intentionally left untyped for now.
+# Static type checking is required for the whole quantisation library.
 [tool.mypy]
 python_version = "3.13"
-files = ["src/QuantumSCC/diag"]
+files = ["src/QuantumSCC"]
 strict = true
 
-# scipy ships no type information; treat its symbols as untyped rather than
-# failing on the missing stubs. (numpy is typed.)
+# scipy, sympy and IPython ship no type information (no stubs / py.typed);
+# treat their symbols as untyped rather than failing on the missing stubs.
+# (numpy is typed.)
 [[tool.mypy.overrides]]
-module = ["scipy.*"]
+module = ["scipy.*", "sympy.*", "IPython.*"]
 ignore_missing_imports = true

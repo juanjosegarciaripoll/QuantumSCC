@@ -70,7 +70,7 @@ class Capacitor:
             return cMean
         else:
             # Simple fabrication error model
-            return np.random.normal(cMean, cMean * getattr(self, 'error', 0) / 100, 1)[0]
+            return float(np.random.normal(cMean, cMean * getattr(self, 'error', 0) / 100, 1)[0])
 
     def energy(self) -> float:
         """
@@ -144,7 +144,7 @@ class Inductor:
         if not random:
             return lMean
         else:
-            return np.random.normal(lMean, lMean * getattr(self, 'error', 0) / 100, 1)[0]
+            return float(np.random.normal(lMean, lMean * getattr(self, 'error', 0) / 100, 1)[0])
 
     def energy(self) -> float:
         """

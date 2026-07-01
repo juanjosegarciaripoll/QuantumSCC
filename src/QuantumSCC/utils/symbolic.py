@@ -14,13 +14,21 @@ This avoids full sympy matrix multiplication — only scalar * outer product add
 The Schur complement (Eq. 18 of the paper) is applied symbolically if needed.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 import sympy as sp
 
 from ..core.elements import Capacitor, Inductor, Junction, PhaseSlip
 
+if TYPE_CHECKING:
+    from ..core.geometry import Geometry
+    from ..core.topology import Topology
 
-def _to_sym(x, tol=1e-9):
+
+def _to_sym(x: float, tol: float = 1e-9) -> Any:
     """Convert a float coefficient to a clean sympy expression."""
     if abs(x) < tol:
         return sp.Integer(0)
@@ -30,7 +38,9 @@ def _to_sym(x, tol=1e-9):
                         rational=False, tolerance=1e-7)
 
 
-def build_symbolic_hamiltonian(topo, geom):
+def build_symbolic_hamiltonian(
+    topo: Topology, geom: Geometry
+) -> tuple[Any, dict[Any, float], list[tuple[Any, float]], list[tuple[Any, float]]]:
     """
     Build the symbolic quadratic Hamiltonian using coefficient extraction.
 
@@ -111,7 +121,7 @@ def build_symbolic_hamiltonian(topo, geom):
 
         subs_num = {sym: float(val) for sym, val in sym_vals.items()}
 
-        def _num(M):
+        def _num(M: Any) -> np.ndarray:
             return np.array(
                 [[float(M[i, j].subs(subs_num)) for j in range(M.shape[1])]
                  for i in range(M.shape[0])], dtype=float)

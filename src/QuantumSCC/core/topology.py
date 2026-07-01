@@ -14,6 +14,8 @@ Implements the two-topology procedure from PRX 2025 Eq. 42-44:
 """
 
 
+from typing import Any
+
 import numpy as np
 
 from ..utils.linalg import (
@@ -29,7 +31,7 @@ Edge = tuple[int, int, object]
 
 
 class Topology:
-    def __init__(self, elements_list: list[Edge], debug: bool = False):
+    def __init__(self, elements_list: list[Edge], debug: bool = False) -> None:
         """
         Initializes the topology analysis.
         Processes the input list of elements to identify nodes and categorize components.
@@ -58,13 +60,13 @@ class Topology:
             nodes_set.add(b)
         parent = {n: n for n in nodes_set}
 
-        def find(x):
+        def find(x: int) -> int:
             while parent[x] != x:
                 parent[x] = parent[parent[x]]
                 x = parent[x]
             return x
 
-        def union(x, y):
+        def union(x: int, y: int) -> None:
             parent[find(x)] = find(y)
 
         for a, b, _ in elements_list:
@@ -90,7 +92,7 @@ class Topology:
 
         # Categorize elements — order: [JJ | Cap | QPS | Ind]
         # All elements are user-provided. No automatic companion creation.
-        self.elements = []
+        self.elements: list[list[Any]] = []
         self.no_JJ = 0
         self.no_Capacitors = 0
         self.no_QPS = 0
@@ -220,7 +222,7 @@ class Topology:
          self.no_reduced_compact_flux,
          self.no_reduced_compact_charge) = self.Kirchhoff()
 
-    def Kirchhoff(self):
+    def Kirchhoff(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, int]:
         """
         Constructs the total Kirchhoff matrix F and its kernel K.
 
@@ -336,7 +338,7 @@ class Topology:
         # This follows from KCL: for N parallel QPS, 1 scalar constraint
         # (sum of charges = const) leaves N-1 free charge differences, all compact.
         qps_start = self.no_JJ + self.no_Capacitors
-        qps_group_counts = {}
+        qps_group_counts: dict[frozenset[int], int] = {}
         for i in range(self.no_QPS):
             na, nb = self.elements[qps_start + i][0], self.elements[qps_start + i][1]
             pair = frozenset([na, nb])
@@ -422,7 +424,7 @@ def _independent_columns_ordered(M: np.ndarray, tol: float = 1e-12) -> np.ndarra
     """
     if M.shape[1] == 0:
         return M
-    keep = []
+    keep: list[int] = []
     for j in range(M.shape[1]):
         candidate = np.hstack([M[:, keep], M[:, j:j+1]]) if keep else M[:, j:j+1]
         if np.linalg.matrix_rank(candidate, tol=tol) > len(keep):
