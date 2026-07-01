@@ -66,18 +66,10 @@ def build_symbolic_hamiltonian(
     P_syms : list of (sympy.Symbol, float)
         (E_P_k symbol, numerical value) for each PhaseSlip.
 
-    FIXME(convention): ``H_sym`` uses the "Adrián" H = ½ ξᵀ M ξ convention,
-    which is NOT the same normalisation as the numerical pipeline's
-    ``Quantization.quadratic_hamiltonian``. Empirically the two differ by a
-    factor of 2:
-
-        eigvals(H_sym.subs(sym_vals)) == eigvals(quadratic_hamiltonian) / 2
-
-    (verified across every circuit in the test registry). This divergence is a
-    footgun for anyone comparing the symbolic and numerical Hamiltonians — the
-    two conventions should be unified, or at least a single documented
-    conversion factor exposed. Until then, callers must apply the ½ factor
-    explicitly. See ``tests/test_symbolic.py::test_symbolic_matches_numeric``.
+    Convention: both ``H_sym`` and ``Quantization.quadratic_hamiltonian``
+    store the matrix M from the PRX 2025 Hamiltonian H = ½ ξᵀ M ξ.
+    The diagonal entries are 2·E_C and 2·E_L (Adrián convention).
+    The physical Hamiltonian is obtained by the ½ prefactor acting on M.
     """
     K          = topo.K
     V          = geom.V
@@ -96,9 +88,10 @@ def build_symbolic_hamiltonian(
     n_jj  = topo.no_JJ
     n_qps = topo.no_QPS
 
-    # ── Build H_full = Σ_k (E_k/2) · col_k col_k^T  (Adrián convention) ──
+    # ── Build H_full = Σ_k E_k · col_k col_k^T  (M matrix, Adrián convention) ──
     # E_k symbols represent E_C = 4e²/C, E_L = (Φ₀/2π)²/L  (= 2·energy())
-    # so H = (E_C/2)·n² + (E_L/2)·φ² matches Adrián's notation.
+    # The physical Hamiltonian is H = ½ ξᵀ M ξ, so M = E_C·n² + E_L·φ² has
+    # diagonal entries 2·E_C and 2·E_L, matching the numerical pipeline.
     H_full   = sp.zeros(n_full, n_full)
     sym_vals = {}
     cap_idx  = 0
@@ -113,7 +106,7 @@ def build_symbolic_hamiltonian(
             sym  = sp.Symbol(name, positive=True)
             sym_vals[sym] = 2 * elem.energy()   # E_L_Adrián = 2·E_L_code
             col = sp.Matrix([_to_sym(x) for x in VTK[:, i]])
-            H_full += sym * sp.Rational(1, 2) * (col * col.T)
+            H_full += sym * (col * col.T)
 
         elif isinstance(elem, Capacitor):
             cap_idx += 1
@@ -121,7 +114,7 @@ def build_symbolic_hamiltonian(
             sym  = sp.Symbol(name, positive=True)
             sym_vals[sym] = 2 * elem.energy()   # E_C_Adrián = 2·E_C_code
             col = sp.Matrix([_to_sym(x) for x in VTK[:, i + no_elements]])
-            H_full += sym * sp.Rational(1, 2) * (col * col.T)
+            H_full += sym * (col * col.T)
 
     # ── Schur complement (mirrors classical_hamiltonian_function logic) ────
     if H_full.shape[0] == no_indep:

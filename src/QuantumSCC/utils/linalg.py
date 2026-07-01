@@ -759,50 +759,41 @@ def symplectic_transformation(
     J[:nf, nf:2*nf] = np.eye(nf)
     J[nf:2*nf, :nf] = -np.eye(nf)
     
-    # Eigenvectors normalization under the symplectic inner product
+    # Eigenvectors normalization under the symplectic inner product.
+    # For each eigenvector v_i, compute the symplectic inner product
+    # α_i = v_i^T J conj(v_i) and normalise so that the result is ±1j.
+    # For degenerate eigenvalues, apply symplectic Gram-Schmidt to
+    # orthogonalise against all previously normalised eigenvectors
+    # with the same eigenvalue.
     normal_imag_eigvec = np.empty((M.shape[0], 0))
 
-    # ADDED: pre-bind the loop-carried j / sigma. The `i > 0` guard on the
-    # degenerate branch below guarantees the non-degenerate path (which sets
-    # both) runs first, so these values are always overwritten before use;
-    # binding them here just makes that explicit and clears the F821 /
-    # has-type false positives. The FIXME below stays open for the deeper
-    # degenerate Gram-Schmidt review.
-    j = 0
-    sigma: Any = 1j
+    j = 0  # consecutive degeneracy counter
     for i, _eigval in enumerate(imag_eigval):
 
-        # Repeated eigenvalues
-        # FIXME(F821): this degenerate-eigenvalue branch references two names
-        # that are never bound on the path that reaches it:
-        #   - `j` (line below) is incremented before assignment; it is only set
-        #     to 0 at the end of the loop body, which `continue` here skips, so
-        #     the first repeated eigenvalue hits an unbound `j`.
-        #   - `sigma` (a few lines down) is expected to carry over from the
-        #     preceding non-repeated iteration but is a loop-local there.
-        # Left untouched pending a correct Gram–Schmidt fix for degenerate
-        # symplectic eigenvectors. Not auto-fixable; do not paper over.
+        # Compute sigma for the current eigenvector: the sign of the
+        # symplectic inner product α = v^T J conj(v).  This must be
+        # computed per-eigenvector, not carried from a previous iteration.
+        alpha_i = imag_eigvec[:,i].T @ J @ np.conj(imag_eigvec[:,i])
+        sigma: Any = 1j * np.sign(alpha_i / 1j)
+
+        # Repeated eigenvalues: symplectic Gram-Schmidt orthogonalisation
+        # against all previously normalised eigenvectors with the same eigenvalue.
         if i > 0 and np.allclose(imag_eigval[i-1], imag_eigval[i]):
-            # FIXME(F821): `j` is unbound on the first repeated eigenvalue.
             j += 1
             summary: Any = 0
             for m in range(1, j + 1):
                 Phi_star = np.conj(normal_imag_eigvec[:,i-m].T @ J @ np.conj(imag_eigvec[:,i]))
                 summary += Phi_star * normal_imag_eigvec[:,i-m].reshape(-1,1)
 
-            # FIXME(F821): `sigma` is unbound here — it is a loop-local of the
-            # non-repeated branch below and does not carry into this path.
             eigvec = (imag_eigvec[:,i].reshape(-1,1) - sigma * summary)
             norm = np.abs(np.sqrt(eigvec.T @ J @ np.conj(eigvec)))
-            normal_imag_eigvec = np.hstack((normal_imag_eigvec, eigvec/norm)) 
+            normal_imag_eigvec = np.hstack((normal_imag_eigvec, eigvec/norm))
             continue
         j = 0
 
-        # First eigenvalues
-        alpha = imag_eigvec[:,i].T @ J @ np.conj(imag_eigvec[:,i])
-        sigma = 1j * np.sign(alpha/1j)
-        Phi = np.sqrt(sigma * alpha)
-        normal_imag_eigvec = np.hstack((normal_imag_eigvec, (imag_eigvec[:,i].reshape(-1,1))/Phi)) 
+        # Non-degenerate: normalise directly
+        Phi = np.sqrt(sigma * alpha_i)
+        normal_imag_eigvec = np.hstack((normal_imag_eigvec, (imag_eigvec[:,i].reshape(-1,1))/Phi))
 
         # Verify the orthonormalization of the term i
         assert (

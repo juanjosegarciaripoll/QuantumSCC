@@ -6,8 +6,8 @@ Covers:
   * build_symbolic_hamiltonian structural outputs (shape, symbol counts,
     symmetry) across the whole circuit registry;
   * the symbolic <-> numerical consistency relation
-        eigvals(H_sym.subs(vals)) == eigvals(quadratic_hamiltonian) / 2
-    (see the FIXME(convention) note in symbolic.py);
+        eigvals(H_sym.subs(vals)) == eigvals(quadratic_hamiltonian)
+    Both pipelines use the Adrián convention: M matrix from H = ½ ξᵀ M ξ;
   * the Circuit.symbolic_hamiltonian_expression printout (terminal path).
 """
 
@@ -113,16 +113,16 @@ class TestBuildSymbolicStructure:
         assert abs(P_syms[0][1] - 4.0) < 1e-9
 
 
-# ── symbolic <-> numerical consistency (the FIXME convention) ────────────────
+# ── symbolic <-> numerical consistency ────────────────────────────────────────
 
 @pytest.mark.parametrize("name,factory", CIRCUIT_REGISTRY,
                          ids=[n for n, _ in CIRCUIT_REGISTRY])
 def test_symbolic_matches_numeric(name, factory):
-    """eigvals(H_sym.subs(vals)) == eigvals(quadratic_hamiltonian) / 2.
+    """eigvals(H_sym.subs(vals)) == eigvals(quadratic_hamiltonian).
 
-    Basis-invariant cross-check of the symbolic pipeline against the numerical
-    one. The factor of 1/2 is the documented convention divergence
-    (FIXME(convention) in symbolic.py).
+    Both pipelines now use the same convention: they store the matrix M
+    from the PRX 2025 Hamiltonian H = ½ ξᵀ M ξ.  Diagonal entries are
+    2·E_C and 2·E_L (Adrián convention).
     """
     topo, geom, quant = _build(factory)
     H_sym, sym_vals, _, _ = build_symbolic_hamiltonian(topo, geom)
@@ -133,7 +133,7 @@ def test_symbolic_matches_numeric(name, factory):
 
     eig_sym = np.sort(np.linalg.eigvalsh((H_num + H_num.T) / 2))
     eig_num = np.sort(np.linalg.eigvalsh(quant.quadratic_hamiltonian.real))
-    np.testing.assert_allclose(eig_sym, eig_num / 2, atol=1e-6)
+    np.testing.assert_allclose(eig_sym, eig_num, atol=1e-6)
 
 
 @pytest.mark.parametrize("factory", [
@@ -155,7 +155,7 @@ def test_schur_complement_branch(factory):
     H_num = np.array(H_sym.subs(sym_vals)).astype(float)
     eig_sym = np.sort(np.linalg.eigvalsh((H_num + H_num.T) / 2))
     eig_num = np.sort(np.linalg.eigvalsh(quant.quadratic_hamiltonian.real))
-    np.testing.assert_allclose(eig_sym, eig_num / 2, atol=1e-6)
+    np.testing.assert_allclose(eig_sym, eig_num, atol=1e-6)
 
 
 # ── symbolic_hamiltonian_expression printout ────────────────────────────────
