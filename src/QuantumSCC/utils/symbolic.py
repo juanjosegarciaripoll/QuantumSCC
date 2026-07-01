@@ -65,6 +65,19 @@ def build_symbolic_hamiltonian(
         (E_J_k symbol, numerical value) for each Junction.
     P_syms : list of (sympy.Symbol, float)
         (E_P_k symbol, numerical value) for each PhaseSlip.
+
+    FIXME(convention): ``H_sym`` uses the "Adrián" H = ½ ξᵀ M ξ convention,
+    which is NOT the same normalisation as the numerical pipeline's
+    ``Quantization.quadratic_hamiltonian``. Empirically the two differ by a
+    factor of 2:
+
+        eigvals(H_sym.subs(sym_vals)) == eigvals(quadratic_hamiltonian) / 2
+
+    (verified across every circuit in the test registry). This divergence is a
+    footgun for anyone comparing the symbolic and numerical Hamiltonians — the
+    two conventions should be unified, or at least a single documented
+    conversion factor exposed. Until then, callers must apply the ½ factor
+    explicitly. See ``tests/test_symbolic.py::test_symbolic_matches_numeric``.
     """
     K          = topo.K
     V          = geom.V
