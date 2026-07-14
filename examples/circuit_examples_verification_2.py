@@ -8,11 +8,14 @@ Explores:
   - 4-node network with JJ and QPS
 """
 
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from QuantumSCC import Circuit, Capacitor, Inductor, Junction, PhaseSlip
 import numpy as np  # noqa: F401 — used by callers of show()
+
+from QuantumSCC import Capacitor, Circuit, Inductor, Junction, PhaseSlip
 
 SEP = "\n" + "=" * 70
 
@@ -54,7 +57,7 @@ def show(name, edges, explain=""):
         'QPS_compact': 'QPS-inductor flux, compact charge',
         'extended': 'extended oscillator mode',
     }
-    print(f"Conjugate pairs (braket order):")
+    print("Conjugate pairs (braket order):")
     for i, (flux, charge, ptype) in enumerate(pairs):
         print(f"  pair {i+1}: ({flux}, {charge})   [{type_labels[ptype]}]")
 

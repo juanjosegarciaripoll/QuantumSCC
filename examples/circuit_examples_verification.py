@@ -2,10 +2,12 @@
 Circuit examples verification — Part 1: Linear and nonlinear circuits.
 """
 
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from QuantumSCC import Circuit, Capacitor, Inductor, Junction, PhaseSlip
+from QuantumSCC import Capacitor, Circuit, Inductor, Junction
 
 SEP = "\n" + "=" * 70
 
