@@ -2,11 +2,13 @@
 Registry-wide property tests (Tier E).
 
 Every topology in conftest.CIRCUIT_REGISTRY must satisfy the same structural
-invariants of the QuantumSCC pipeline, and (where the diagonaliser supports it)
-produce a Hermitian Hamiltonian with a real, finite spectrum. Parametrising one
+invariants of the QuantumSCC pipeline, and produce a Hermitian Hamiltonian with
+a real, finite spectrum. Parametrising one
 set of checks over the whole registry guards every supported circuit uniformly,
 rather than ad hoc per-architecture.
 """
+
+import dataclasses
 
 import numpy as np
 import pytest
@@ -19,16 +21,7 @@ from QuantumSCC.diag import build_hamiltonian, eigenenergies
 _CHARGE_CUT = 3
 _FOCK_DIM = 4
 
-# dualmon_full's compact-charge quadratic term references a periodic operator,
-# which the diagonaliser cannot reconstruct ("periodic operators only in
-# cosines"). Its structural invariants still hold; only diagonalisation is
-# excluded (and pinned separately below).
-_NON_DIAGONALISABLE = {"dualmon_full"}
-_DIAG_REGISTRY = [(n, f) for n, f in CIRCUIT_REGISTRY
-                  if n not in _NON_DIAGONALISABLE]
-
 _ALL_IDS = [n for n, _ in CIRCUIT_REGISTRY]
-_DIAG_IDS = [n for n, _ in _DIAG_REGISTRY]
 
 
 def _canonical_J(k):
@@ -80,9 +73,9 @@ class TestStructuralInvariants:
         assert c.model().n_modes == n
 
 
-# ── diagonalisation invariants (reconstructible circuits) ───────────────────
+# ── diagonalisation invariants (all circuits) ───────────────────────────────
 
-@pytest.mark.parametrize("factory", [f for _, f in _DIAG_REGISTRY], ids=_DIAG_IDS)
+@pytest.mark.parametrize("factory", [f for _, f in CIRCUIT_REGISTRY], ids=_ALL_IDS)
 class TestDiagonalisationInvariants:
     def test_hamiltonian_hermitian(self, factory):
         H = build_hamiltonian(Circuit(factory()),
@@ -103,13 +96,51 @@ class TestDiagonalisationInvariants:
         assert abs((h1 - h2).toarray()).max() < 1e-12
 
 
-# ── documented non-reconstructible circuit ──────────────────────────────────
+# ── dualmon_full: mixed compact-charge + extended circuit ───────────────────
 
-def test_dualmon_full_periodic_quadratic_not_reconstructible():
-    """dualmon_full has a compact-charge quadratic term on a periodic operator;
-    the diagonaliser must reject it with a clear error rather than build a wrong
-    Hamiltonian."""
+def _dualmon_full_reference(N=121, X=12.0, M=6, k=5):
+    """Lowest ``k`` levels of dualmon_full, built independently of QuantumSCC.
+
+    Circuit: JJ ‖ C ‖ C on (1,0), L on (1,2), QPS ‖ L on (2,0), all values 1 GHz.
+    With φ₁ the node-1 phase, n₁ its conjugate charge, q the (compact) QPS charge
+    and ψ ∈ ℤ its conjugate flux:
+
+        H = ½ n₁² + (φ₁ − ψ)² + ψ² − cos φ₁ − cos q
+
+    (two parallel ``Capacitor(1)`` → ½ n₁², each ``Inductor(1)`` → (Δφ)²).
+    φ₁ is discretised on a sinc-DVR grid of ``N`` points on [−X, X]; ψ ∈ [−M, M].
+    """
+    x = np.linspace(-X, X, N)
+    h = x[1] - x[0]
+    d = np.arange(N)[:, None] - np.arange(N)[None, :]
+    with np.errstate(divide="ignore"):
+        kinetic = np.where(d == 0, np.pi**2 / 3, 2.0 * (-1.0) ** d / d**2) / h**2
+    psis = np.arange(-M, M + 1)
+    H = np.zeros((len(psis) * N, len(psis) * N))
+    for a, psi in enumerate(psis):
+        blk = slice(a * N, (a + 1) * N)
+        H[blk, blk] = 0.5 * kinetic + np.diag((x - psi) ** 2 + psi**2 - np.cos(x))
+    for a in range(len(psis) - 1):  # − cos q = −½ (ψ → ψ+1 + h.c.)
+        lo, hi = slice(a * N, (a + 1) * N), slice((a + 1) * N, (a + 2) * N)
+        H[lo, hi] = H[hi, lo] = -0.5 * np.eye(N)
+    return np.linalg.eigvalsh(H)[:k]
+
+
+def test_dualmon_full_matches_independent_reference():
+    """The compact QPS charge enters only through cos q, so dualmon_full is
+    reconstructible and its spectrum matches the hand-built Hamiltonian."""
     factory = dict(CIRCUIT_REGISTRY)["dualmon_full"]
+    e = eigenenergies(Circuit(factory()), k=5, charge_cut=8, fock_dim=30)
+    np.testing.assert_allclose(e, _dualmon_full_reference(), atol=1e-7)
+
+
+def test_periodic_quadratic_term_is_rejected():
+    """A quadratic term on a periodic operator violates the model invariant;
+    the diagonaliser must reject it rather than build a wrong Hamiltonian."""
+    model = Circuit(dict(CIRCUIT_REGISTRY)["dualmon_full"]()).model()
+    assert model.mode_sectors[0] == "compact_charge"
+    K_charge = np.array(model.K_charge, dtype=float)
+    K_charge[0, 0] = 1.0
     with pytest.raises(ValueError, match="periodic operator"):
-        build_hamiltonian(Circuit(factory()),
+        build_hamiltonian(dataclasses.replace(model, K_charge=K_charge),
                           charge_cut=_CHARGE_CUT, fock_dim=_FOCK_DIM)
