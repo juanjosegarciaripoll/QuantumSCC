@@ -165,8 +165,6 @@ class TestMultiElementPrintout:
     def test_offdiagonal_flux_coupling_printed(self, capsys):
         # dualmon_full retains an off-diagonal flux-flux quadratic coupling in
         # the phiq basis, exercising the flux-flux coupling print branch.
-        # (It cannot be diagonalised, but Hamiltonian_expression works on the
-        # quadratic form directly.)
         c = Circuit([(1, 0, Junction(1, "GHz")), (1, 0, Capacitor(1, "GHz")),
                      (1, 2, Inductor(1, "GHz")),
                      (2, 0, PhaseSlip(1, "GHz")), (2, 0, Inductor(1, "GHz")),
